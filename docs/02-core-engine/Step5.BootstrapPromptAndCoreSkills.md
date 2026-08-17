@@ -2,7 +2,7 @@
 
 **Knowledge depth: 7/10**
 
-Before assembling a prompt, read [07 — Bootstrap, Skills & Memory](../07-bootstrap-skills-memory.md). It explains GoClaw's agent context files and startup seeding. Read [14 — Skills Runtime](../14-skills-runtime.md) and [15 — Core Skills System](../15-core-skills-system.md) when you are ready to understand how an instruction package becomes available to an agent.
+Before assembling a prompt, read [07 — Bootstrap, Skills & Memory](../07-bootstrap-skills-memory.md). It explains GoClaw's agent context files and startup seeding. Read [14 — Skills Runtime](../14-skills-runtime.md) and [15 — Core Skills System](../15-core-skills-system.md) to understand how an instruction package becomes available to an agent. In this project, use one or two local `SKILL.md` files selected by configuration; runtime dependency installation and skill publishing are study topics for the final review.
 
 ## The prompt is assembled context
 
@@ -38,5 +38,4 @@ A skill is a packaged unit of domain guidance, often a `SKILL.md` plus supportin
 
 ## Read selectively
 
-Do not load every skill into every prompt. Start with a skill selector that returns only the few instructions relevant to the current request. GoClaw's skills subsystem supplies a useful reference for discovery and access control; Step 19 covers publishing and lifecycle management.
-
+Do not load every skill into every prompt. Start with a selector that returns only the few instructions relevant to the current request. GoClaw's skills subsystem supplies the reference for discovery and access control; this course stops before a skill marketplace or publishing workflow.

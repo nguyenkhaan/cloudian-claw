@@ -1,8 +1,8 @@
-# Step 14 — WebSocket RPC and Live Events
+# Step 13 — WebSocket Events and UI Contract
 
 **Knowledge depth: 8/10**
 
-Read [19 — WebSocket RPC Methods](../19-websocket-rpc.md) and [04 — Gateway and Protocol](../04-gateway-protocol.md) before introducing a socket. They explain GoClaw's request, response, and event frame shapes. For collaboration events, read [13 — WebSocket Team & Delegation Events](../13-ws-team-events.md).
+Read [19 — WebSocket RPC Methods](../19-websocket-rpc.md) and [04 — Gateway and Protocol](../04-gateway-protocol.md) before introducing a socket. They explain GoClaw's request, response, and event frame shapes. [13 — WebSocket Team & Delegation Events](../13-ws-team-events.md) is useful architecture reading, but this course emits only chat text, tool activity, and run-status events.
 
 ## Why a chat UI needs more than HTTP
 
@@ -32,4 +32,3 @@ The first method establishes identity and connection scope. After that, each RPC
 ## Events are a view, not the database
 
 A client can disconnect between two events. Design the UI so it can re-query durable state—sessions, messages, tasks, or traces—after reconnecting. The event stream makes interaction immediate; the store remains authoritative.
-

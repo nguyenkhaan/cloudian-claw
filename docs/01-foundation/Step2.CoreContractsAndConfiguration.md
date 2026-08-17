@@ -15,7 +15,7 @@ agentkit/
 │   ├── model/           # canonical LLM types and Provider interface
 │   ├── tools/           # tool contract, registry, policy
 │   ├── session/         # history and summary persistence
-│   ├── memory/          # added in Steps 6–7
+│   ├── memory/          # added in Steps 8–9
 │   ├── runtime/         # queue and event bus
 │   └── transport/http/  # HTTP handler
 └── migrations/

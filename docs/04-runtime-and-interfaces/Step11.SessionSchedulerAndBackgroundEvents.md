@@ -2,7 +2,7 @@
 
 **Knowledge depth: 7/10**  
 
-Read [08 — Scheduling & Cron](../08-scheduling-cron.md) before adding goroutines or queues. [10 — Tracing & Observability](../10-tracing-observability.md) explains how asynchronous runs remain visible, while [22 — Heartbeat System](../22-heartbeat-system.md) shows how scheduled work fits the same lifecycle.
+Read [08 — Scheduling & Cron](../08-scheduling-cron.md) before adding goroutines or queues. [10 — Tracing & Observability](../10-tracing-observability.md) explains how asynchronous runs remain visible. Read [22 — Heartbeat System](../22-heartbeat-system.md) to understand GoClaw's scheduled autonomy, but do not implement cron or heartbeat in this course.
 
 ## The concurrency problem
 
@@ -18,7 +18,7 @@ flowchart LR
   L --> R[Agent runner]
 ```
 
-GoClaw implements this in `internal/scheduler`: queues are keyed by session; lanes independently cap main, subagent, and cron work. It also supports cancellation and a draining state that rejects new work during shutdown.
+GoClaw implements this in `internal/scheduler`: queues are keyed by session; lanes independently cap main, subagent, and cron work. Here, implement only one `main` lane, cancellation, and a draining state for shutdown.
 
 ## Minimal keyed scheduler
 
@@ -58,7 +58,7 @@ For a production version, return a result channel, enforce queue size/backpressu
 
 ## Domain events are not chat messages
 
-Use events for asynchronous facts: “session summarized”, “episode ready to index”, “credential revoked”, or “task completed”. Do not make a request wait for background memory consolidation.
+Use events for asynchronous facts such as “session summarized” and “episode ready to index”. Do not make a request wait for background memory consolidation. Team tasks, credential revocation, cron, and heartbeat remain GoClaw reference topics.
 
 ```go
 type Event struct { Type, SourceID string; Payload any }
@@ -81,7 +81,7 @@ The GoClaw `DomainEventBus` has a bounded queue, typed event names, worker pool,
 | Chat turn | ordered, at-most-once per queued job | session queue + idempotency key |
 | Memory index | at-least-once | event retry + unique source ID |
 | WebSocket notification | best effort | replayable state query is the recovery path |
-| External message send | at-least-once risk | provider idempotency key where available |
+| Future channel send | at-least-once risk | study only; provider idempotency key where available |
 
 Avoid claiming exactly-once delivery. In a crash between a database commit and an HTTP call, it is usually impossible without a transactional outbox and receiver support.
 

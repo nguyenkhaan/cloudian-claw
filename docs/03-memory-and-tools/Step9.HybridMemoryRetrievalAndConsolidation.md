@@ -13,7 +13,6 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE episodic_memories (
   id UUID PRIMARY KEY,
-  tenant_id UUID NOT NULL,
   agent_id UUID NOT NULL,
   user_id TEXT NOT NULL,
   source_id TEXT NOT NULL,
@@ -24,10 +23,10 @@ CREATE TABLE episodic_memories (
   search tsvector GENERATED ALWAYS AS (to_tsvector('simple', summary)) STORED,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at TIMESTAMPTZ,
-  UNIQUE (tenant_id, agent_id, user_id, source_id)
+  UNIQUE (agent_id, user_id, source_id)
 );
 CREATE INDEX episodic_scope_idx
-  ON episodic_memories (tenant_id, agent_id, user_id, created_at DESC);
+  ON episodic_memories (agent_id, user_id, created_at DESC);
 CREATE INDEX episodic_search_idx ON episodic_memories USING GIN (search);
 CREATE INDEX episodic_vector_idx
   ON episodic_memories USING hnsw (embedding vector_cosine_ops);
@@ -37,10 +36,10 @@ The unique `source_id` makes ingestion idempotent. A worker can safely retry a s
 
 ## Repository contract
 
-Keep database details behind a small interface. The explicit `Scope` makes tenant isolation reviewable and avoids a hidden global variable.
+Keep database details behind a small interface. The explicit `Scope` makes user/agent ownership reviewable and avoids a hidden global variable.
 
 ```go
-type Scope struct { TenantID, AgentID, UserID string }
+type Scope struct { AgentID, UserID string }
 
 type Episode struct {
 	ID, SourceID, Summary, L0Abstract string
@@ -66,20 +65,20 @@ func (s *PGStore) Search(ctx context.Context, sc Scope, q string, v []float32, l
 	const sqlText = `
 WITH scored AS (
   SELECT id, source_id, summary, l0_abstract, topics, expires_at,
-    ts_rank_cd(search, websearch_to_tsquery('simple', $4)) AS text_score,
-    1 - (embedding <=> $5::vector) AS vector_score
+    ts_rank_cd(search, websearch_to_tsquery('simple', $3)) AS text_score,
+    1 - (embedding <=> $4::vector) AS vector_score
   FROM episodic_memories
-  WHERE tenant_id = $1 AND agent_id = $2 AND user_id = $3
+  WHERE agent_id = $1 AND user_id = $2
     AND (expires_at IS NULL OR expires_at > now())
 )
 SELECT id, source_id, summary, l0_abstract, topics, expires_at,
        (0.7 * text_score + 0.3 * vector_score) AS score
 FROM scored
-WHERE (0.7 * text_score + 0.3 * vector_score) >= $6
+WHERE (0.7 * text_score + 0.3 * vector_score) >= $5
 ORDER BY score DESC, id ASC
-LIMIT $7`
+LIMIT $6`
 
-	rows, err := s.db.QueryContext(ctx, sqlText, sc.TenantID, sc.AgentID, sc.UserID,
+	rows, err := s.db.QueryContext(ctx, sqlText, sc.AgentID, sc.UserID,
 		q, pgvector.NewVector(v), min, limit)
 	if err != nil { return nil, fmt.Errorf("search episodic memory: %w", err) }
 	defer rows.Close()

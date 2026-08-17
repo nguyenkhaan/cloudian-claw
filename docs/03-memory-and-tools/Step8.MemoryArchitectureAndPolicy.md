@@ -49,15 +49,14 @@ Embeddings are arrays of numbers that place semantically related text near one a
 The hard problem is not cosine similarity; it is authorization. A useful scope tuple is:
 
 ```text
-(tenant_id, agent_id, user_id | NULL, source_type, source_id)
+(agent_id, user_id, source_type, source_id)
 ```
 
-- `tenant_id`: mandatory isolation boundary.
 - `agent_id`: agent personality/workspace boundary.
-- `user_id`: personal memory; `NULL` only for deliberately shared agent memory.
+- `user_id`: personal memory boundary.
 - `source_id`: idempotency key for repeat ingestion.
 
-GoClaw’s `EpisodicStore` requires implementations to take tenant identity from context and scope every query. Adopt the same invariant, then verify it with integration tests.
+GoClaw’s `EpisodicStore` also carries tenant identity for platform isolation. This project has one deployment scope, so every memory query uses its agent and user identity; the same ownership principle still applies.
 
 ## Retrieval flow
 
@@ -78,7 +77,7 @@ GoClaw limits the recent frame to 400 runes, avoiding broken UTF-8 and query dil
 | Extract synchronously? | start synchronous, move to event worker | response latency vs simplicity |
 | Auto-inject raw chunks? | no, inject abstracts | prevents prompt bloat and instruction contamination |
 | Global user memory? | only with explicit product policy | high privacy risk |
-| Delete expired records? | yes, scheduled lifecycle job | retention must be enforceable |
+| Delete expired records? | yes, cleanup worker or startup job | retention must be enforceable |
 | Promote to semantic? | human/audited rule first | bad extraction becomes durable misinformation |
 
 ## Prompt-injection boundary

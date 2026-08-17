@@ -1,16 +1,15 @@
-# Step 13 — CLI and HTTP API
+# Step 12 — Gateway, HTTP API, and CLI
 
 **Knowledge depth: 7/10**  
 
-Read [04 — Gateway and Protocol](../04-gateway-protocol.md) for the gateway boundary and [18 — HTTP REST API](../18-http-api.md) for HTTP contracts. This step keeps WebSocket details for Step 14; [20 — API Keys & Authentication](../20-api-keys-auth.md) provides the shared authentication context.
+Read [04 — Gateway and Protocol](../04-gateway-protocol.md) for the gateway boundary and [18 — HTTP REST API](../18-http-api.md) for HTTP contracts. WebSocket details come in Step 13; [20 — API Keys & Authentication](../20-api-keys-auth.md) provides the authentication context used by both interfaces.
 
-## One application service, three adapters
+## One application service, two adapters
 
 ```mermaid
 flowchart LR
  CLI[Cobra CLI] --> APP[Chat service]
  HTTP[HTTP handler] --> APP
- WS[WebSocket RPC] --> APP
  APP --> SCH[Scheduler]
  SCH --> AG[Agent runner]
  AG --> STORE[(Stores)]
@@ -18,7 +17,11 @@ flowchart LR
 
 Do not put agent behavior in handlers. A transport should authenticate, parse, validate, construct a `RunRequest`, schedule it, and serialize a result.
 
-GoClaw starts from `main.go → cmd.Execute()`. Gateway composition is in `cmd/gateway.go`; `internal/gateway/server.go` builds `/ws`, `/health`, `/v1/chat/completions`, `/v1/responses`, and registered API handlers. The CLI uses Cobra commands under `cmd/`.
+GoClaw starts from `main.go → cmd.Execute()`. Gateway composition is in `cmd/gateway.go`; the server builds health, HTTP API, and WebSocket routes. In this course, start with `/health`, a small `/v1/chat/completions` endpoint, and a Cobra CLI; Step 13 adds the persistent socket.
+
+## Resolve identity once at the edge
+
+For a student project, a single bearer token from configuration is enough to protect the demo. When a request passes authentication, attach a stable `user_id`, `agent_id`, locale, and session key to its context. The GoClaw documents show the larger API-key/RBAC model; do not reproduce that administration layer yet.
 
 ## Minimal HTTP endpoint
 

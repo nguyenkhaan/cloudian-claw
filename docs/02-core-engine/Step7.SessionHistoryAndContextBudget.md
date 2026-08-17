@@ -11,7 +11,7 @@ A **session** is the transcript for one active conversation. It optimizes contin
 ```text
 Session history: exact recent interaction
 Session summary: compressed older interaction
-Long-term memory: retrieved facts from many sessions     ← Step 6
+Long-term memory: retrieved facts from many sessions     ← Step 8
 ```
 
 GoClaw has a focused `SessionStore` interface in `internal/store/session_store.go`, with PostgreSQL and SQLite implementations. Its pipeline loads history and summary before prompt construction, checks token pressure each iteration, checkpoints messages, and may summarize after a turn.
@@ -22,28 +22,30 @@ Store whole canonical messages as JSON initially; normalize later only when quer
 
 ```sql
 CREATE TABLE sessions (
-  tenant_id UUID NOT NULL,
+  agent_id UUID NOT NULL,
+  user_id TEXT NOT NULL,
   session_key TEXT NOT NULL,
   summary TEXT NOT NULL DEFAULT '',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (tenant_id, session_key)
+  PRIMARY KEY (agent_id, user_id, session_key)
 );
 
 CREATE TABLE session_messages (
   id BIGSERIAL PRIMARY KEY,
-  tenant_id UUID NOT NULL,
+  agent_id UUID NOT NULL,
+  user_id TEXT NOT NULL,
   session_key TEXT NOT NULL,
   ordinal BIGINT NOT NULL,
   message JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (tenant_id, session_key, ordinal),
-  FOREIGN KEY (tenant_id, session_key) REFERENCES sessions(tenant_id, session_key)
+  UNIQUE (agent_id, user_id, session_key, ordinal),
+  FOREIGN KEY (agent_id, user_id, session_key) REFERENCES sessions(agent_id, user_id, session_key)
 );
 CREATE INDEX session_messages_lookup
-  ON session_messages (tenant_id, session_key, ordinal);
+  ON session_messages (agent_id, user_id, session_key, ordinal);
 ```
 
-Every query includes `tenant_id`, even if the session key appears globally unique. That is a future-proof isolation rule.
+Every query includes `agent_id` and `user_id`, even if the session key appears globally unique. GoClaw adds `tenant_id` for a multi-tenant deployment; Step 14 explains that extension without making it part of this project.
 
 ## Correct history construction
 

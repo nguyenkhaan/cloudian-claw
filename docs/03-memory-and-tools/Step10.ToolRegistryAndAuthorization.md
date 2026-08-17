@@ -4,9 +4,11 @@
 
 Study [03 — Tools System](../03-tools-system.md) before adding capabilities beyond a simple read-only tool. Read the related controls in [09 — Security](../09-security.md); for command execution, learn [19 — Credentialed Exec](../19-credentialed-exec.md) rather than exposing a raw shell.
 
+For this project, keep the tool palette narrow: `memory_search`, `read_file`, `write_file`, and optionally a time/date tool. Files stay inside one workspace directory. Do not build shell execution, browser automation, MCP bridges, credentialed CLIs, or external message delivery; the cited GoClaw documents explain why those capabilities need more operational design.
+
 ## Theory: tools cross the trust boundary
 
-The model may propose a tool call, but it is not allowed to execute it. Your runtime must independently validate the name, JSON shape, user/tenant scope, capability policy, rate limit, and resource boundary.
+The model may propose a tool call, but it is not allowed to execute it. Your runtime must independently validate the name, JSON shape, user/agent scope, capability policy, rate limit, and resource boundary.
 
 ```mermaid
 flowchart LR
@@ -74,17 +76,15 @@ func (r *Registry) Execute(ctx context.Context, in agent.RunRequest, call model.
 
 The code is deliberately explicit: a result is always converted to a canonical `role="tool"` message, including policy failure. That gives the model a chance to choose another safe path.
 
-## Policy layering
+## A policy small enough to understand
 
 Use intersection, not “last setting wins”:
 
 ```text
 registered tool
-∩ global deployment policy
-∩ tenant policy
 ∩ agent allow-list
-∩ current channel/workspace policy
-∩ user approval (when required)
+∩ workspace path check
+∩ optional user approval for writes
 ```
 
 Example policy decisions:
@@ -93,11 +93,10 @@ Example policy decisions:
 |---|---|---|
 | `datetime` | allow | none |
 | `memory_search` | allow | same memory scope |
-| `web_fetch` | allow with SSRF guard | allowed host/IP only |
 | `read_file` | allow | resolved path stays under workspace |
-| `write_file` | require approval | workspace-only path |
-| `exec` | deny / sandbox | command policy and explicit approval |
-| `message` | require approval | same tenant/channel authorization |
+| `write_file` | optional approval | workspace-only path |
+| `exec` | not included | study GoClaw's sandbox and credentialed execution design instead |
+| `message` | not included | channel delivery is outside this student scope |
 
 ## Execution details that prevent incidents
 
@@ -111,6 +110,6 @@ Example policy decisions:
 
 ## First tools
 
-Implement `datetime` and a scope-safe `memory_search` first. Add filesystem, network, shell, browser, MCP, and delegate tools only after their policy and audit requirements are designed.
+Implement `datetime`, a scope-safe `memory_search`, and workspace file tools. The important lesson is that a model proposes an action; the registry independently decides whether that action is possible.
 
 Tools are where a language model touches the outside world. The registry is therefore an execution boundary, not a convenience map of functions.

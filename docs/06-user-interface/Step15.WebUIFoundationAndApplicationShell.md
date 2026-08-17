@@ -1,4 +1,4 @@
-# Step 20 — Web UI Foundation and Application Shell
+# Step 15 — Web UI Foundation and Application Shell
 
 **Knowledge depth: 6/10**
 
@@ -19,7 +19,7 @@ Create a React + TypeScript application with a root layout, authenticated route 
 ```text
 src/
 ├── app/          route tree and providers
-├── features/     chat, agents, settings, skills, traces
+├── features/     chat, sessions, agent settings, memory, run timeline
 ├── components/   reusable visual building blocks
 ├── lib/          API/WS clients and formatters
 ├── stores/       connection and UI state
@@ -28,9 +28,8 @@ src/
 
 ## Separate server state from UI state
 
-Sessions, agents, tasks, and configuration come from the server and must be refreshable. Drawer state, active tab, keyboard visibility, and optimistic input state are browser-local. Mixing these two kinds of state is a common source of stale interfaces.
+Sessions, agent configuration, memory, and run history come from the server and must be refreshable. Drawer state, active tab, keyboard visibility, and optimistic input state are browser-local. Mixing these two kinds of state is a common source of stale interfaces.
 
 ## Design for small screens from the start
 
 The agent UI is often used in a narrow browser. Use responsive layouts, accessible controls, and scroll regions that do not hide the chat input behind mobile browser chrome. These details make the course result feel like a product rather than a developer demo.
-

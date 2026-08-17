@@ -2,7 +2,7 @@
 
 **Knowledge depth: 6/10**  
 
-Read [02 — LLM Providers](../02-providers.md) carefully before choosing an API. Refer to [12 — Extended Thinking](../12-extended-thinking.md) when adding reasoning controls, and [18 — ACP Provider](../18-acp-provider.md) when you need a second, process-based integration pattern.
+Read [02 — LLM Providers](../02-providers.md) carefully before choosing an API. This project implements one OpenAI-compatible adapter with streaming and tool calls. Refer to [12 — Extended Thinking](../12-extended-thinking.md) to understand provider reasoning controls; [18 — ACP Provider](../18-acp-provider.md) is architecture study only, not an integration to build here.
 
 ## Why this boundary matters
 
@@ -23,7 +23,7 @@ flowchart LR
   R --> A
 ```
 
-## Add capabilities before you need them
+## Keep a small capability model
 
 ```go
 package model
@@ -51,9 +51,9 @@ type StreamingProvider interface {
 
 `StreamWithTools` is not cosmetic. In GoClaw, DashScope reports it as false and falls back to non-streaming when tools are present. Your pipeline must make the same kind of decision before sending bytes.
 
-## OpenAI-compatible adapter skeleton
+## One OpenAI-compatible adapter
 
-This is complete enough for a first adapter. Production additions are retries, timeouts, request IDs, typed error classification, and robust SSE parsing.
+This adapter is enough for the course. Retain the capability contract because it documents what the loop may expect, but do not spend the project budget implementing a provider registry, fallback routing, or ACP process management.
 
 ```go
 type OpenAIProvider struct {
