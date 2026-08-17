@@ -4,6 +4,14 @@
 
 GoClaw is an AI agent gateway written in Go. It exposes a WebSocket RPC (v3) interface and an OpenAI-compatible HTTP API for orchestrating LLM-powered agents. The system uses PostgreSQL as its storage backend with full multi-tenant isolation, per-user context files, encrypted credentials, agent delegation, teams, and LLM call tracing.
 
+```md 
+Go claw là một AI Agent Gateway, chịu trách nhiệm đứng giữa người cung cấp và các model AI. Sử dụng giao thức RPC (Remote Procedure Call), cho phép gọi hàm thực hiện từ xa, thông qua cơ chế WebSocket. 
+
+PostgresSQL được dùng làm database. 
+
+Kiến trúc multi-tenant: Cho phép một hệ thống phục vụ nhiều (tệp) khách hàng khác nhau, mỗi (tệp) khách hàng là 1 tenant. Các dữ liệu của khách hàng: context files, thông tin bảo mật, LLM calls tracing... đều được tách độc lập và riêng biệt. 
+```
+
 ## 2. Component Diagram
 
 ```mermaid
@@ -96,9 +104,9 @@ flowchart TD
 
 ## 3. Module Map
 
-| Module | Description |
-|--------|-------------|
-| `internal/gateway/` | WebSocket + HTTP server, client handling, method router. Decomposed: gateway_deps, gateway_http_wiring, gateway_events, gateway_lifecycle, gateway_tools_wiring |
+| Module | Description | Mô tả | 
+|--------|-------------| --- | 
+| `internal/gateway/` | WebSocket + HTTP server, client handling, method router. Decomposed: gateway_deps, gateway_http_wiring, gateway_events, gateway_lifecycle, gateway_tools_wiring | Chứa các hàm hỗ trợ cho việc điều phối của gateway, giúp điều phối yêu cầu của client đến đúng vị trí | 
 | `internal/gateway/methods/` | RPC method handlers: chat, agents, teams, delegations, sessions, config, skills, cron, pairing, exec approval, usage, send |
 | `internal/agent/` | Agent loop (think, act, observe), router, resolver, system prompt builder, sanitization, pruning, tracing, memory flush, DELEGATION.md + TEAM.md injection |
 | `internal/providers/` | LLM providers: Anthropic (native HTTP + SSE), OpenAI-compatible (HTTP + SSE, 12+ providers), DashScope (Qwen), ACP (JSON-RPC 2.0 subprocess), Claude CLI, Codex, extended thinking support, retry logic. Shared SSEScanner in providers/sse_reader.go |

@@ -6,33 +6,43 @@ This mini-course leads you from an empty Go project to a stable student-scale AI
 
 | Module | Steps | Focus |
 |---|---|---|
-| 01 — Foundation | 1–3 | Structure, contracts, configuration, and durable data |
-| 02 — Core engine | 4–7 | Providers, prompts, orchestration, and conversation context |
-| 03 — Memory and tools | 8–10 | Memory design, retrieval, and action boundaries |
-| 04 — Runtime and interfaces | 11–13 | Scheduling, gateway, API, and live events |
-| 05 — Secure project | 14 | Single-tenant access and safe boundaries |
-| 06 — User interface | 15–16 | Application shell, real-time chat, and run timeline |
+| 01 — Foundation | 1–5 | Scope, skeleton, contracts, migrations, and PostgreSQL stores |
+| 02 — Core engine | 6–15 | Provider, prompt, skills, agent loops, tools, history, and compaction |
+| 03 — Memory and tools | 16–18 | Memory policy, hybrid retrieval, domain events, and consolidation |
+| 04 — Runtime and interfaces | 19–22 | Scheduling, HTTP, WebSocket, and CLI adapters |
+| 05 — Secure project | 23 | Single-tenant hardening, approvals, and audit |
+| 06 — User interface | 24–26 | Application shell, real-time chat, timeline, and acceptance review |
 
 ## Learning order
 
-See [STEP_INDEX.md](STEP_INDEX.md) for a one-page table of each Step's function, expected output, and AI-agent concepts.
+See [STEP_INDEX.md](STEP_INDEX.md) for the module map, dependency-ordered roadmap, and measurable outcome of every Step.
 
-1. [Step1.ProjectScopeAndFolderStructure.md](01-foundation/Step1.ProjectScopeAndFolderStructure.md)
-2. [Step2.CoreContractsAndConfiguration.md](01-foundation/Step2.CoreContractsAndConfiguration.md)
-3. [Step3.DataModelAndStoreLayer.md](01-foundation/Step3.DataModelAndStoreLayer.md)
-4. [Step4.LLMProviderAdapter.md](02-core-engine/Step4.LLMProviderAdapter.md)
-5. [Step5.BootstrapPromptAndCoreSkills.md](02-core-engine/Step5.BootstrapPromptAndCoreSkills.md)
-6. [Step6.AgentOrchestrationLoop.md](02-core-engine/Step6.AgentOrchestrationLoop.md)
-7. [Step7.SessionHistoryAndContextBudget.md](02-core-engine/Step7.SessionHistoryAndContextBudget.md)
-8. [Step8.MemoryArchitectureAndPolicy.md](03-memory-and-tools/Step8.MemoryArchitectureAndPolicy.md)
-9. [Step9.HybridMemoryRetrievalAndConsolidation.md](03-memory-and-tools/Step9.HybridMemoryRetrievalAndConsolidation.md)
-10. [Step10.ToolRegistryAndAuthorization.md](03-memory-and-tools/Step10.ToolRegistryAndAuthorization.md)
-11. [Step11.SessionSchedulerAndBackgroundEvents.md](04-runtime-and-interfaces/Step11.SessionSchedulerAndBackgroundEvents.md)
-12. [Step12.GatewayHTTPAPIAndCLI.md](04-runtime-and-interfaces/Step12.GatewayHTTPAPIAndCLI.md)
-13. [Step13.WebSocketEventsAndUIContract.md](04-runtime-and-interfaces/Step13.WebSocketEventsAndUIContract.md)
-14. [Step14.SingleTenantSecurityAndAccessControl.md](05-production/Step14.SingleTenantSecurityAndAccessControl.md)
-15. [Step15.WebUIFoundationAndApplicationShell.md](06-user-interface/Step15.WebUIFoundationAndApplicationShell.md)
-16. [Step16.ChatUIRunTimelineAndProjectReview.md](06-user-interface/Step16.ChatUIRunTimelineAndProjectReview.md)
+1. [Step1.ProductScopeAndRuntimeMap.md](01-foundation/Step1.ProductScopeAndRuntimeMap.md)
+2. [Step2.ProjectSkeletonAndConfiguration.md](01-foundation/Step2.ProjectSkeletonAndConfiguration.md)
+3. [Step3.CoreContractsAndDependencyInversion.md](01-foundation/Step3.CoreContractsAndDependencyInversion.md)
+4. [Step4.DurableDataModelAndMigrations.md](01-foundation/Step4.DurableDataModelAndMigrations.md)
+5. [Step5.PostgreSQLStoresAndScope.md](01-foundation/Step5.PostgreSQLStoresAndScope.md)
+6. [Step6.OpenAICompatibleProviderBasics.md](02-core-engine/Step6.OpenAICompatibleProviderBasics.md)
+7. [Step7.ProviderStreamingAndAdapterTests.md](02-core-engine/Step7.ProviderStreamingAndAdapterTests.md)
+8. [Step8.PromptBuilderAndContextComposition.md](02-core-engine/Step8.PromptBuilderAndContextComposition.md)
+9. [Step9.LocalSkillsLoadingAndSelection.md](02-core-engine/Step9.LocalSkillsLoadingAndSelection.md)
+10. [Step10.BasicTextAgentLoop.md](02-core-engine/Step10.BasicTextAgentLoop.md)
+11. [Step11.ToolContractsRegistryAndPolicy.md](02-core-engine/Step11.ToolContractsRegistryAndPolicy.md)
+12. [Step12.WorkspaceToolsAndRuntimeProtections.md](02-core-engine/Step12.WorkspaceToolsAndRuntimeProtections.md)
+13. [Step13.ToolAwareAgentLoop.md](02-core-engine/Step13.ToolAwareAgentLoop.md)
+14. [Step14.SessionHistoryAndContextBudget.md](02-core-engine/Step14.SessionHistoryAndContextBudget.md)
+15. [Step15.DurableSummaryCompaction.md](02-core-engine/Step15.DurableSummaryCompaction.md)
+16. [Step16.MemoryArchitectureAndPolicy.md](03-memory-and-tools/Step16.MemoryArchitectureAndPolicy.md)
+17. [Step17.HybridMemoryStorageAndRetrieval.md](03-memory-and-tools/Step17.HybridMemoryStorageAndRetrieval.md)
+18. [Step18.DomainEventsAndMemoryConsolidation.md](03-memory-and-tools/Step18.DomainEventsAndMemoryConsolidation.md)
+19. [Step19.SessionSchedulerAndShutdown.md](04-runtime-and-interfaces/Step19.SessionSchedulerAndShutdown.md)
+20. [Step20.GatewayAndHTTPAPI.md](04-runtime-and-interfaces/Step20.GatewayAndHTTPAPI.md)
+21. [Step21.WebSocketProtocolAndRuntimeEvents.md](04-runtime-and-interfaces/Step21.WebSocketProtocolAndRuntimeEvents.md)
+22. [Step22.CLIAdapter.md](04-runtime-and-interfaces/Step22.CLIAdapter.md)
+23. [Step23.SecurityHardeningApprovalsAndAudit.md](05-production/Step23.SecurityHardeningApprovalsAndAudit.md)
+24. [Step24.WebUIFoundationAndAgentSettings.md](06-user-interface/Step24.WebUIFoundationAndAgentSettings.md)
+25. [Step25.ChatUIReconnectionAndRunTimeline.md](06-user-interface/Step25.ChatUIReconnectionAndRunTimeline.md)
+26. [Step26.EndToEndAcceptanceAndExtensionReview.md](06-user-interface/Step26.EndToEndAcceptanceAndExtensionReview.md)
 
 ## Source map
 
