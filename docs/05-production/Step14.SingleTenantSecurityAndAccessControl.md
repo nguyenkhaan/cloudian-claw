@@ -1,80 +1,140 @@
 # Step 14 — Single-Tenant Security and Access Control
 
-**Knowledge depth: 8/10**  
+**Knowledge depth: 8/10**
 
-Before this stage, study [09 — Security](../09-security.md) and [20 — API Keys & Authentication](../20-api-keys-auth.md). Read [23 — AI Agent Permission Matrix](../23-ai-agent-permission-matrix.md) and [23 — Multi-Tenant Architecture](../23-multi-tenant-architecture.md) to understand how GoClaw scales authority and scope. This project remains a single tenant with one configured access token; it does not build tenant administration or RBAC screens.
+This step applies one trusted identity and consistent security controls across HTTP, WebSocket, stores, memory, and tools.
 
-## Threat model first
+## Task 1 — Write the threat model
 
-An agent combines untrusted input with powerful actions. Protect the following flows:
+### Theory
+
+Read [09 — Security](../09-security.md), [20 — API Keys & Authentication](../20-api-keys-auth.md), and [23 — AI Agent Permission Matrix](../23-ai-agent-permission-matrix.md). Use [23 — Multi-Tenant Architecture](../23-multi-tenant-architecture.md) to understand future scope; do not build tenant administration or RBAC screens.
+
+Prompt injection is not solved by a stronger system prompt. Security comes from scoped data access, least-privilege tools, validation, approvals, and audit logs.
+
+### Practice guide
+
+Create `docs/threat-model.md` for these paths:
 
 ```text
-user input → prompt → model proposal → tool call → filesystem/network/DB
+user input → prompt → model proposal → tool → file/memory
 retrieved memory/document → prompt
-browser/API client → HTTP or WebSocket → user-scoped stores
-configured credential → provider request
+browser/CLI → HTTP/WS → scoped stores
+configured secret → provider request
 ```
 
-Prompt injection is not solved by a system prompt. It is reduced through least privilege, tool policy, scoped retrieval, output validation, and auditable approvals.
+For each path, list the protected asset, attacker-controlled input, enforcement point, and expected audit event.
 
-## A single project still needs scope
+## Task 2 — Resolve identity once at the edge
 
-Make ownership impossible to forget in a store query. GoClaw injects tenant, agent, user, and locale into `context.Context`; its tenant-aware stores then add predicates. For this course, propagate only the user and agent identity, and keep it in every session, message, memory, and trace query.
+### Theory
+
+The request body can select a resource, but it cannot prove identity. Authentication middleware creates the trusted principal.
+
+### Practice guide
+
+Create context helpers:
 
 ```go
-type principalKey struct{}
-type Principal struct{ UserID, AgentID string }
-func WithPrincipal(ctx context.Context, p Principal) context.Context { return context.WithValue(ctx, principalKey{}, p) }
-func PrincipalFrom(ctx context.Context) (Principal, error) {
-	p, ok := ctx.Value(principalKey{}).(Principal)
-	if !ok || p.UserID == "" || p.AgentID == "" { return Principal{}, errors.New("principal required") }
-	return p, nil
+type Principal struct {
+	UserID         string
+	AllowedAgentID string
 }
 
-func (s *SessionStore) Load(ctx context.Context, key string) ([]model.Message, error) {
-	p, err := PrincipalFrom(ctx); if err != nil { return nil, err }
-	rows, err := s.db.QueryContext(ctx, `SELECT message FROM session_messages
-WHERE user_id = $1 AND agent_id = $2 AND session_key = $3 ORDER BY ordinal`, p.UserID, p.AgentID, key)
-	// scan rows…
-	return messages, err
-}
+func WithPrincipal(context.Context, Principal) context.Context
+func PrincipalFrom(context.Context) (Principal, error)
 ```
 
-Never accept `user_id` or `agent_id` from a normal request body as authority. Resolve both from the authenticated connection or selected server-side agent. In GoClaw's multi-tenant architecture, this same rule expands to tenant scope and role checks.
+Use the same authentication code for HTTP and WebSocket upgrade requests. Compare tokens in constant time and rotate them through configuration, not source code.
 
-## Boundary controls
+## Task 3 — Enforce scope in every store
 
-| Boundary | Required control |
+### Practice guide
+
+Audit session, message, memory, agent, and trace queries. Each query must derive user/agent scope from the principal or a server-side authorization decision.
+
+Example:
+
+```sql
+SELECT message
+FROM session_messages
+WHERE user_id = $1
+  AND agent_id = $2
+  AND session_key = $3
+ORDER BY ordinal;
+```
+
+Never implement “load by session key, then check owner in Go.” Scope in SQL so unauthorized rows are not loaded.
+
+## Task 4 — Harden transport boundaries
+
+### Practice guide
+
+Apply:
+
+| Boundary | Controls |
 |---|---|
-| HTTP | authentication, request size limit, rate limit, CORS, typed validation |
-| WebSocket | authenticated handshake, origin check, frame/read limit, outbound backpressure |
-| SQL | parameterized statements and user/agent scope predicates |
-| Files | canonical path, workspace-root containment, deny sensitive paths |
-| Network tools | allow-list or SSRF protections; block private/link-local metadata targets |
-| Shell | not included in this project |
-| Secrets | environment variables and redaction from logs/results |
-| Memory | scope before search; retrieved text is reference data, never authority |
+| HTTP | Authentication, body limit, rate limit, CORS, typed validation, timeouts. |
+| WebSocket | Authenticated upgrade, origin check, frame limit, idle deadline, bounded write queue. |
+| SQL | Parameters, scoped predicates, transaction deadlines. |
+| Files | Canonical path and workspace containment. |
+| Memory | Scope before ranking; retrieved content marked as data. |
+| Secrets | Environment/config source and redaction. |
 
-GoClaw has concrete counterparts: AES-256-GCM credential handling (`internal/crypto`), path controls in `internal/tools`, SSRF-aware web tooling, approval machinery, input guard, gateway rate limiting, and `internal/permissions` RBAC.
+The project does not include shell or network tools. If added later, they require sandboxing and SSRF controls.
 
-## Approval is a product flow
+## Task 5 — Implement write approval
 
-For a workspace write, either request simple confirmation in the UI or record a structured pending approval. Bind the approval to:
+### Theory
+
+Approval is a structured authorization fact, not a conversational “yes.” Bind it to the exact proposed action.
+
+### Practice guide
+
+For `write_file`, model a pending approval with:
 
 ```text
-actor + agent + session + tool name + normalized arguments + expiry
+actor + agent + session + tool name
++ hash(normalized arguments) + expiry
 ```
 
-Hash the normalized arguments. If the model changes `rm report.txt` into `rm *`, the old approval must not apply.
+Normalize JSON deterministically before hashing. Consume approval once. If arguments change, require a new approval.
 
-## Audit events
+The first UI may use a confirm action that calls an approval endpoint. The tool registry must verify the server-side approval record before execution.
+
+## Task 6 — Add audit events and redaction
+
+### Practice guide
 
 Record decisions, not secrets:
 
 ```json
-{"kind":"tool.authorization","user":"…","agent":"…","tool":"write_file","decision":"denied","reason":"approval_required","request_id":"…"}
+{
+  "kind":"tool.authorization",
+  "request_id":"...",
+  "user_id":"...",
+  "agent_id":"...",
+  "tool":"write_file",
+  "decision":"denied",
+  "reason":"approval_required"
+}
 ```
 
-Useful audit fields: request/run ID, actor, agent, tool capability, decision, timing, resource identifier, and a redacted argument summary.
+Audit authentication failures, tool allow/deny, approval creation/use, and cross-scope not-found results. Redact known tokens, authorization headers, and provider keys before log output.
 
-The security model should be visible in the design of every earlier step, not added as a final wrapper around the finished agent.
+## Task 7 — Run security checks
+
+### Practice guide
+
+Test:
+
+1. JSON `user_id` cannot change the principal.
+2. A user cannot read another user's session or memory.
+3. Invalid WebSocket origin/token is rejected.
+4. Traversal and symlink escape cannot leave the workspace.
+5. A write without exact approval is denied.
+6. Changed arguments invalidate approval.
+7. Secrets do not appear in logs or errors.
+8. Rate and input limits return stable errors.
+
+This step is complete when all external paths use one trusted identity and every powerful action has an independent enforcement point.

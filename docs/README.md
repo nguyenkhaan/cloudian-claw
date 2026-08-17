@@ -15,6 +15,8 @@ This mini-course leads you from an empty Go project to a stable student-scale AI
 
 ## Learning order
 
+See [STEP_INDEX.md](STEP_INDEX.md) for a one-page table of each Step's function, expected output, and AI-agent concepts.
+
 1. [Step1.ProjectScopeAndFolderStructure.md](01-foundation/Step1.ProjectScopeAndFolderStructure.md)
 2. [Step2.CoreContractsAndConfiguration.md](01-foundation/Step2.CoreContractsAndConfiguration.md)
 3. [Step3.DataModelAndStoreLayer.md](01-foundation/Step3.DataModelAndStoreLayer.md)

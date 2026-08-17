@@ -1,43 +1,36 @@
 # Step 10 — Tool Registry and Authorization
 
-**Knowledge depth: 9/10**  
+**Knowledge depth: 9/10**
 
-Study [03 — Tools System](../03-tools-system.md) before adding capabilities beyond a simple read-only tool. Read the related controls in [09 — Security](../09-security.md); for command execution, learn [19 — Credentialed Exec](../19-credentialed-exec.md) rather than exposing a raw shell.
+This step gives the agent a small, safe action surface: time, memory search, and workspace file access.
 
-For this project, keep the tool palette narrow: `memory_search`, `read_file`, `write_file`, and optionally a time/date tool. Files stay inside one workspace directory. Do not build shell execution, browser automation, MCP bridges, credentialed CLIs, or external message delivery; the cited GoClaw documents explain why those capabilities need more operational design.
+## Task 1 — Define the tool boundary
 
-## Theory: tools cross the trust boundary
+### Theory
 
-The model may propose a tool call, but it is not allowed to execute it. Your runtime must independently validate the name, JSON shape, user/agent scope, capability policy, rate limit, and resource boundary.
+Read [03 — Tools System](../03-tools-system.md) and [09 — Security](../09-security.md). For privileged command execution, study [19 — Credentialed Exec](../19-credentialed-exec.md); do not add a raw shell in this project.
 
-```mermaid
-flowchart LR
- M[Model tool call] --> N[Normalize + validate JSON]
- N --> A{Authorized in scope?}
- A -->|no| E[Tool error message + audit]
- A -->|yes| R[Registry lookup]
- R --> X[Execute with deadline]
- X --> S[Scrub + truncate result]
- S --> H[Append canonical tool message]
- H --> M
-```
+The model proposes a tool call. The runtime validates, authorizes, executes, scrubs, truncates, and records it.
 
-GoClaw’s `Tool` interface is defined in `internal/tools/types.go`. `Registry` owns registration, aliases, capability metadata, rate limits, context injection, panic recovery, credential scrubbing, and deterministic provider definitions. This is the right responsibility boundary.
+### Practice guide
 
-## Complete minimal contract and registry
+Create `internal/tools/types.go`:
 
 ```go
-package tools
-
 type Capability string
+
 const (
-	Read Capability = "read"
-	Write Capability = "write"
+	Read    Capability = "read"
+	Write   Capability = "write"
 	Network Capability = "network"
-	Exec Capability = "exec"
+	Exec    Capability = "exec"
 )
 
-type Result struct { Content string; IsError bool }
+type Result struct {
+	Content string
+	IsError bool
+}
+
 type Tool interface {
 	Name() string
 	Description() string
@@ -46,70 +39,131 @@ type Tool interface {
 	Execute(context.Context, map[string]any) Result
 }
 
-type Policy interface { Allow(ctx context.Context, t Tool, args map[string]any) error }
-
-type Registry struct { tools map[string]Tool; policy Policy }
-func NewRegistry(p Policy) *Registry { return &Registry{tools: map[string]Tool{}, policy: p} }
-func (r *Registry) Register(t Tool) error {
-	if t.Name() == "" { return errors.New("tool name is required") }
-	if _, exists := r.tools[t.Name()]; exists { return fmt.Errorf("duplicate tool %q", t.Name()) }
-	r.tools[t.Name()] = t; return nil
-}
-func (r *Registry) Definitions() []model.ToolDefinition {
-	names := make([]string, 0, len(r.tools)); for n := range r.tools { names = append(names, n) }
-	sort.Strings(names)
-	defs := make([]model.ToolDefinition, 0, len(names))
-	for _, n := range names { t := r.tools[n]; defs = append(defs, model.ToolDefinition{Name:t.Name(), Description:t.Description(), Parameters:t.Parameters()}) }
-	return defs
-}
-func (r *Registry) Execute(ctx context.Context, in agent.RunRequest, call model.ToolCall) (msg model.Message) {
-	t, ok := r.tools[call.Name]
-	if !ok { return toolError(call, "unknown tool") }
-	if call.ID == "" || call.Arguments == nil { return toolError(call, "invalid tool call") }
-	if err := r.policy.Allow(ctx, t, call.Arguments); err != nil { return toolError(call, "denied: "+err.Error()) }
-	defer func() { if v := recover(); v != nil { msg = toolError(call, fmt.Sprintf("tool panicked: %v", v)) } }()
-	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second); defer cancel()
-	result := t.Execute(callCtx, call.Arguments)
-	return model.Message{Role:"tool", ToolCallID:call.ID, ToolName:call.Name, Content:truncate(scrub(result.Content), 32<<10), IsError:result.IsError}
+type Policy interface {
+	Allow(context.Context, Tool, map[string]any) error
 }
 ```
 
-The code is deliberately explicit: a result is always converted to a canonical `role="tool"` message, including policy failure. That gives the model a chance to choose another safe path.
+Every `Parameters` value must be a JSON Schema object.
 
-## A policy small enough to understand
+## Task 2 — Implement the registry
+
+### Theory
+
+The registry is an execution boundary, not only a map. It owns duplicate detection, deterministic definitions, validation, policy, timeout, panic recovery, and result conversion.
+
+### Practice guide
+
+Implement these operations:
+
+```go
+type Registry struct {
+	tools  map[string]Tool
+	policy Policy
+}
+
+func (r *Registry) Register(Tool) error
+func (r *Registry) Definitions(context.Context) []model.ToolDefinition
+func (r *Registry) Execute(context.Context, model.ToolCall) model.Message
+```
+
+`Execute` must:
+
+1. Reject unknown names and missing call IDs.
+2. Validate arguments against JSON Schema.
+3. Ask the policy for permission.
+4. Run with a tool-specific deadline.
+5. Recover panics at this boundary.
+6. Scrub secrets and truncate output.
+7. Return `role="tool"` with the original call ID for success and failure.
+
+Sort definitions by name so provider requests and tests are deterministic.
+
+## Task 3 — Implement capability policy
+
+### Theory
 
 Use intersection, not “last setting wins”:
 
 ```text
 registered tool
 ∩ agent allow-list
-∩ workspace path check
-∩ optional user approval for writes
+∩ authenticated scope
+∩ resource boundary
+∩ optional approval
 ```
 
-Example policy decisions:
+### Practice guide
 
-| Tool | Default | Extra condition |
+Start with this policy:
+
+| Tool | Default | Required check |
 |---|---|---|
-| `datetime` | allow | none |
-| `memory_search` | allow | same memory scope |
-| `read_file` | allow | resolved path stays under workspace |
-| `write_file` | optional approval | workspace-only path |
-| `exec` | not included | study GoClaw's sandbox and credentialed execution design instead |
-| `message` | not included | channel delivery is outside this student scope |
+| `datetime` | Allow | None beyond validation. |
+| `memory_search` | Allow | Same agent/user scope. |
+| `read_file` | Allow | Path stays under workspace. |
+| `write_file` | Approval | Path stays under workspace and approval matches arguments. |
+| `exec` | Not registered | Outside course scope. |
 
-## Execution details that prevent incidents
+Pass user, agent, session, workspace, and approval through immutable request context or explicit execution input. Do not mutate singleton tools for each request.
 
-- Validate JSON Schema before `Execute`; never rely on the model to supply correct types.
-- Put scope values in immutable context or an explicit input struct—not mutable fields on singleton tool instances.
-- Strip credentials from user-visible and model-visible outputs.
-- Bound output bytes and identify truncation; giant tool output can consume the entire prompt.
-- Keep tool-call IDs intact for provider protocol pairing.
-- Parallelize only independent **read-only** tool I/O. Append results in the model’s original call order. GoClaw’s pipeline has this split raw-I/O / ordered-state design.
-- Detect repeated calls and identical results. See `internal/agent/toolloop.go` for a useful multi-signal guard.
+## Task 4 — Implement workspace file tools
 
-## First tools
+### Practice guide
 
-Implement `datetime`, a scope-safe `memory_search`, and workspace file tools. The important lesson is that a model proposes an action; the registry independently decides whether that action is possible.
+For every requested path:
 
-Tools are where a language model touches the outside world. The registry is therefore an execution boundary, not a convenience map of functions.
+1. Reject empty and NUL-containing values.
+2. Join relative paths to the configured workspace root.
+3. Clean and resolve the path.
+4. Resolve existing symlinks where applicable.
+5. Confirm the result is the root or a descendant of it.
+6. Apply byte limits to reads and writes.
+
+Return a model-visible error for traversal or denied access. Do not reveal sensitive host paths in that error.
+
+`write_file` should create or replace one explicit file only. Do not support globs, recursive deletion, or shell syntax.
+
+## Task 5 — Connect the first tools
+
+### Practice guide
+
+Register:
+
+- `datetime`: returns current time for an allowed timezone.
+- `memory_search`: uses Step 9 scoped retrieval.
+- `read_file`: reads a bounded UTF-8/text file from the workspace.
+- `write_file`: optional, approval-gated bounded write.
+
+Pass the registry definitions to each provider request. Pass returned tool messages back into the Step 6 loop.
+
+## Task 6 — Add loop and output protections
+
+### Practice guide
+
+Add:
+
+- Per-tool timeouts.
+- Maximum result bytes with an explicit truncation marker.
+- Credential-pattern redaction.
+- Rate limits for expensive tools.
+- Detection of repeated identical calls/results.
+
+Parallelize only independent read-only I/O. Persist observations in the model's original call order.
+
+## Task 7 — Verify authorization
+
+### Practice guide
+
+Test:
+
+1. Duplicate registration.
+2. Unknown tool.
+3. Invalid JSON argument type.
+4. Denied write without approval.
+5. `../` traversal and symlink escape.
+6. Successful bounded read.
+7. Panic recovery and output truncation.
+8. Correct tool-call ID in every result.
+
+This step is complete when no tool can run without independent runtime validation and authorization.

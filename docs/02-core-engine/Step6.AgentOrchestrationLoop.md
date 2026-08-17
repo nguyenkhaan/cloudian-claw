@@ -1,128 +1,151 @@
 # Step 6 — Agent Orchestration Loop
 
-**Knowledge depth: 9/10**  
+**Knowledge depth: 8/10**
 
-Before writing the loop, read [01 — Agent Loop](../01-agent-loop.md). Keep [03 — Tools System](../03-tools-system.md) nearby for tool-call behavior and [07 — Bootstrap, Skills & Memory](../07-bootstrap-skills-memory.md) for the context that enters the first model call.
+This step combines prompt building, provider calls, tools, and persistence into one bounded agent run.
 
-## Theory: an agent loop is a state machine
+## Task 1 — Define per-run state
 
-An LLM call alone is not an agent. An agent observes state, proposes actions, executes only authorized actions, feeds observations back to the model, and stops under explicit limits.
+### Theory
 
-```mermaid
-stateDiagram-v2
-  [*] --> Context: load history + prompt
-  Context --> Think: model call
-  Think --> Observe: final text
-  Think --> Act: tool calls
-  Act --> Observe: tool results appended
-  Observe --> Think: more work required
-  Observe --> Finalize: final answer
-  Finalize --> [*]
-  Think --> Failed: timeout/budget/error
-  Act --> Failed: policy breach/fatal error
-```
-
-GoClaw makes this state machine explicit in `internal/pipeline`: stateless stages receive mutable per-run `RunState`. `Pipeline.Run` has setup, iteration, and finalization lists; `BreakLoop` completes normally while `AbortRun` stops early. That is a strong design to copy.
-
-## Context budget is a safety property
-
-For every model call, reserve room for output and tool schemas:
+Read [01 — Agent Loop](../01-agent-loop.md). GoClaw describes eight logical phases:
 
 ```text
-history budget = context window
-               - system prompt tokens
-               - tool schema tokens
-               - max output tokens
-               - safety reserve
+context → history → prompt → think → act → observe → memory → summarize
 ```
 
-Do not wait for the provider to reject an oversized request. Prune or summarize before `Think`.
+Some phases can share code, but their responsibilities must remain visible. Run state belongs to one request; a reusable runner holds dependencies only.
 
-## A complete minimal runner
+### Practice guide
 
-This runner is intentionally sequential. Step 8 adds safe parallel reads only after your tool policy can classify tools.
+Create a private state type:
 
 ```go
-type Runner struct {
-	Provider model.Provider
-	Sessions SessionStore
-	Tools    tools.Executor
-	Config   Config
+type runState struct {
+	request    RunRequest
+	messages   []model.Message
+	usage      model.Usage
+	iterations int
+	toolCalls  int
 }
 
-type Config struct { MaxIterations, MaxToolCalls, MaxTokens int }
-
-func (r *Runner) Run(ctx context.Context, in RunRequest) (RunResult, error) {
-	history, summary, err := r.Sessions.Load(ctx, in.SessionKey)
-	if err != nil { return RunResult{}, fmt.Errorf("load session: %w", err) }
-
-	msgs := buildPrompt(summary, history, in.Message)
-	if err := r.Sessions.Append(ctx, in.SessionKey, model.Message{Role: "user", Content: in.Message}); err != nil {
-		return RunResult{}, fmt.Errorf("persist user turn: %w", err)
-	}
-
-	var result RunResult
-	for iteration := 0; iteration < r.Config.MaxIterations; iteration++ {
-		msgs = pruneToBudget(msgs, r.Config.MaxTokens)
-		resp, err := r.Provider.Chat(ctx, model.ChatRequest{
-			Messages: msgs, Tools: r.Tools.Definitions(), MaxTokens: r.Config.MaxTokens,
-		})
-		if err != nil { return result, fmt.Errorf("think iteration %d: %w", iteration, err) }
-		result.Usage = addUsage(result.Usage, resp.Usage)
-		result.Iterations = iteration + 1
-
-		assistant := model.Message{Role: "assistant", Content: resp.Content, ToolCalls: resp.ToolCalls}
-		msgs = append(msgs, assistant)
-		if len(resp.ToolCalls) == 0 {
-			if err := r.Sessions.Append(ctx, in.SessionKey, assistant); err != nil {
-				return result, fmt.Errorf("persist answer: %w", err)
-			}
-			result.Content = resp.Content
-			return result, nil
-		}
-
-		if result.ToolCalls+len(resp.ToolCalls) > r.Config.MaxToolCalls {
-			return result, fmt.Errorf("tool-call limit exceeded")
-		}
-		if err := r.Sessions.Append(ctx, in.SessionKey, assistant); err != nil {
-			return result, fmt.Errorf("persist tool request: %w", err)
-		}
-
-		for _, call := range resp.ToolCalls {
-			toolMsg := r.Tools.Execute(ctx, in, call)
-			msgs = append(msgs, toolMsg)
-			if err := r.Sessions.Append(ctx, in.SessionKey, toolMsg); err != nil {
-				return result, fmt.Errorf("persist tool result: %w", err)
-			}
-			result.ToolCalls++
-		}
-	}
-	return result, fmt.Errorf("iteration limit exceeded")
+type Runner struct {
+	Provider model.Provider
+	Agents   AgentStore
+	Sessions SessionStore
+	Prompts  PromptBuilder
+	Tools    ToolExecutor
+	Config   Config
 }
 ```
 
-## Production refinements from GoClaw
+Do not reuse `runState` across calls. Do not store the current session or user on `Runner`.
 
-| Concern | Reference design |
+## Task 2 — Prepare and persist the turn
+
+### Practice guide
+
+At the start of `Run`:
+
+1. Validate agent, user, session key, and non-empty message.
+2. Load agent settings.
+3. Load scoped history and summary.
+4. Select skills and available tool definitions.
+5. Build canonical prompt messages.
+6. Persist the user's message before the provider call.
+
+If preparation fails, wrap the error with the phase name. Do not create a fictional assistant reply.
+
+## Task 3 — Implement the bounded think loop
+
+### Theory
+
+The model either returns a final answer or proposes tool calls. The runtime executes allowed tools, appends observations, and asks the model again.
+
+### Practice guide
+
+Implement the central loop:
+
+```go
+for state.iterations < r.Config.MaxIterations {
+	state.iterations++
+
+	resp, err := r.Provider.Chat(ctx, model.ChatRequest{
+		Model:     agentConfig.Model,
+		Messages:  state.messages,
+		Tools:     r.Tools.Definitions(ctx),
+		MaxTokens: r.Config.MaxOutputTokens,
+	})
+	if err != nil {
+		return resultFrom(state), fmt.Errorf("think iteration %d: %w", state.iterations, err)
+	}
+
+	state.usage = addUsage(state.usage, resp.Usage)
+	assistant := model.Message{
+		Role: "assistant", Content: resp.Content, ToolCalls: resp.ToolCalls,
+	}
+	state.messages = append(state.messages, assistant)
+
+	if len(resp.ToolCalls) == 0 {
+		// Persist the assistant message and return the final result.
+	}
+	// Persist the tool request, execute calls, and continue.
+}
+```
+
+Apply context budgeting before every provider call; Step 7 implements the full pruning policy.
+
+## Task 4 — Execute and observe tool calls
+
+### Theory
+
+The model proposes actions. The tool registry independently validates and authorizes them. Unknown, invalid, and denied calls become canonical tool error messages so the model may recover.
+
+### Practice guide
+
+For every tool-call batch:
+
+1. Check the remaining total tool-call budget.
+2. Persist the assistant message containing the original calls.
+3. Execute each call through the registry.
+4. Append and persist one tool message for each call ID.
+5. Preserve provider order even if read-only I/O runs concurrently.
+6. Continue to the next model iteration.
+
+Never keep an assistant tool request without its matching tool results. Never execute the same call twice because persistence returned an ambiguous error.
+
+## Task 5 — Define failure and cancellation behavior
+
+### Theory
+
+Read the run-visibility concepts in [10 — Tracing & Observability](../10-tracing-observability.md). A clear failure is better than a fluent but false assistant message.
+
+### Practice guide
+
+Implement these outcomes:
+
+| Condition | Required behavior |
 |---|---|
-| Pipeline state | `internal/pipeline/run_state.go`; state is per run |
-| Stage contracts | `internal/pipeline/stage.go` |
-| Tool parallelism | raw I/O can run in parallel, state mutation remains ordered |
-| Finalization | uses `context.WithoutCancel` to persist safe final state after disconnect |
-| Loop protection | `internal/agent/toolloop.go` detects repeated calls/results and read-only stalls |
-| Intermediate output | callbacks emit block replies while final result stays authoritative |
+| Caller cancelled | Stop provider and tool work; perform safe final bookkeeping only. |
+| Provider timeout | Return a retryable run error; do not persist an invented answer. |
+| Unknown or denied tool | Append a tool error and let the model continue within limits. |
+| Tool panic | Recover inside the registry and return a tool error. |
+| Iteration/tool budget reached | Return a clear limit error with partial usage metadata. |
+| Final persistence failed | Report failure; do not claim the turn is durable. |
 
-## Failure policy
+Use `context.WithoutCancel` only for bounded, safe persistence. Do not continue model calls after cancellation.
 
-Classify errors. Do not turn every failure into a vague assistant reply.
+## Task 6 — Test the complete loop
 
-| Condition | Action |
-|---|---|
-| caller cancelled | stop; finalize best-effort only |
-| provider timeout | return retryable error; do not persist fictional answer |
-| unknown tool | append a `tool` error message; let model recover |
-| denied tool | append a policy error; audit it |
-| tool panic | recover at registry boundary; append error |
-| iteration/budget limit | return a clear partial-failure result |
+### Practice guide
 
-The loop is the point where all earlier concepts meet: canonical messages, provider calls, prompts, and eventually tools. Keep it readable before adding parallelism or secondary agents.
+Use scripted fake provider responses to test:
+
+1. One text-only response.
+2. One tool call followed by a final response.
+3. Unknown tool followed by model recovery.
+4. Repeated calls stopped by the tool-call limit.
+5. Provider cancellation.
+6. Persistence failure at each append point.
+
+Assert message order, tool-call IDs, usage totals, and iteration counts. This step is complete when one runner can handle concurrent calls without sharing run state.

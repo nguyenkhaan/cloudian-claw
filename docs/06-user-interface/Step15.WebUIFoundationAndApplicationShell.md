@@ -2,34 +2,121 @@
 
 **Knowledge depth: 6/10**
 
-There is no separate GoClaw author document devoted only to the React shell. Use [04 — Gateway and Protocol](../04-gateway-protocol.md), [18 — HTTP REST API](../18-http-api.md), and [19 — WebSocket RPC Methods](../19-websocket-rpc.md) as the contract knowledge behind the UI. Then study the implementation in `goclaw/ui/web/` as the code companion.
+This step creates the React application shell, gateway clients, authentication state, and agent settings page.
 
-## The UI is a client of the gateway
+## Task 1 — Define the UI boundary
 
-The browser must not recreate agent logic. It owns presentation, local interaction state, routing, and connection recovery; the gateway remains the source of truth for sessions, configuration, tools, and long-running work.
+### Theory
 
-```text
-React route → query/mutation hook → HTTP or WebSocket client → gateway contract
-```
+Use [04 — Gateway and Protocol](../04-gateway-protocol.md), [18 — HTTP REST API](../18-http-api.md), and [19 — WebSocket RPC Methods](../19-websocket-rpc.md) as the UI contracts.
 
-## Establish the application shell
-
-Create a React + TypeScript application with a root layout, authenticated route boundary, navigation, a responsive content area, a notification layer, and a central connection/auth state. GoClaw's web application uses React, Vite, Tailwind, Radix primitives, Zustand, and React Router; use the same separation even if you choose different libraries.
+The browser owns presentation, routing, temporary interaction state, and connection recovery. The gateway owns sessions, agent settings, tools, memory, and runs.
 
 ```text
-src/
-├── app/          route tree and providers
-├── features/     chat, sessions, agent settings, memory, run timeline
-├── components/   reusable visual building blocks
-├── lib/          API/WS clients and formatters
-├── stores/       connection and UI state
-└── i18n/         user-facing translations
+React route → query/mutation hook → HTTP/WS client → gateway
 ```
 
-## Separate server state from UI state
+### Practice guide
 
-Sessions, agent configuration, memory, and run history come from the server and must be refreshable. Drawer state, active tab, keyboard visibility, and optimistic input state are browser-local. Mixing these two kinds of state is a common source of stale interfaces.
+Do not copy agent logic into TypeScript. Define typed API/protocol models that match Steps 12–13 and keep them in one client layer.
 
-## Design for small screens from the start
+## Task 2 — Create the React project
 
-The agent UI is often used in a narrow browser. Use responsive layouts, accessible controls, and scroll regions that do not hide the chat input behind mobile browser chrome. These details make the course result feel like a product rather than a developer demo.
+### Practice guide
+
+Create a React + TypeScript application under `web/`. A suitable first structure is:
+
+```text
+web/src/
+├── app/          routes and providers
+├── features/
+│   ├── chat/
+│   ├── sessions/
+│   ├── agent-settings/
+│   └── runs/
+├── components/   reusable UI pieces
+├── lib/          HTTP/WS clients and formatters
+├── stores/       connection and local UI state
+└── styles/
+```
+
+Set development configuration for gateway HTTP and WebSocket URLs. Do not place provider keys in browser environment variables.
+
+## Task 3 — Build the application shell
+
+### Practice guide
+
+Add:
+
+- Root providers and error boundary.
+- Routes for `/chat/:sessionKey?` and `/settings/agent`.
+- Desktop sidebar and mobile drawer navigation.
+- Main scrollable content region.
+- Notification/toast layer.
+- Loading, empty, and fatal-error states.
+
+Use accessible buttons, labels, focus styles, and keyboard navigation. Test the shell at a narrow mobile width from the beginning.
+
+## Task 4 — Separate server and UI state
+
+### Theory
+
+Server state is authoritative and refreshable. UI state is temporary and local.
+
+### Practice guide
+
+Treat these as server state:
+
+```text
+agent settings, sessions, messages, memories, runs
+```
+
+Treat these as UI state:
+
+```text
+active drawer, selected tab, draft input, expanded tool card
+```
+
+Use a query/cache library or small typed hooks for server state. Do not make a global client store the only copy of server data.
+
+## Task 5 — Implement authentication and clients
+
+### Practice guide
+
+Create one HTTP client that adds the configured demo token and maps gateway error codes. Create one WebSocket client that:
+
+1. Connects with authentication.
+2. Tracks `connecting`, `connected`, `reconnecting`, and `failed` states.
+3. Correlates request IDs with responses.
+4. Dispatches typed events.
+5. Reconnects with bounded exponential backoff.
+
+For a local course project, the token may be entered by the user and kept in session storage. Explain that a production browser app should prefer a secure server-managed session over long-lived bearer tokens in JavaScript storage.
+
+## Task 6 — Build agent settings
+
+### Practice guide
+
+The settings page edits:
+
+- Model name from the server-approved choices.
+- Custom system prompt.
+- Enabled local skills.
+- Enabled tools supported by the server.
+
+Load settings from the gateway, validate before submit, save through an HTTP endpoint, and show server field errors. After success, invalidate/reload the agent query. Do not make browser-local settings authoritative.
+
+## Task 7 — Verify the shell
+
+### Practice guide
+
+Check:
+
+1. A page reload restores server-backed settings.
+2. Invalid authentication shows a clear signed-out state.
+3. Connection state is visible but not distracting.
+4. Keyboard navigation reaches all shell controls.
+5. Mobile layout keeps primary navigation and content usable.
+6. No provider secret is present in the browser bundle or network requests.
+
+This step is complete when the UI can connect to the gateway and manage the agent profile. Chat rendering is completed in Step 16.

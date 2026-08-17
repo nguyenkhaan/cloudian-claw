@@ -1,38 +1,24 @@
 # Step 2 — Core Contracts and Configuration
 
-**Knowledge depth: 5/10**  
+**Knowledge depth: 5/10**
 
-Read [00 — Architecture Overview](../00-architecture-overview.md), then skim [04 — Gateway and Protocol](../04-gateway-protocol.md) and [06 — Store Layer and Data Model](../06-store-data-model.md). At this point, understand why GoClaw keeps transport, provider, and persistence details outside the agent core.
+This step creates provider-neutral contracts and configuration. The result is a core that can compile with fake dependencies.
 
-Create a new module separate from GoClaw. This is the *learning implementation*, not a fork that must retain GoClaw package names.
+## Task 1 — Define canonical model types
 
-```text
-agentkit/
-├── cmd/agentkit/main.go
-├── internal/
-│   ├── app/             # dependency composition only
-│   ├── agent/           # run request, loop, prompt assembly
-│   ├── model/           # canonical LLM types and Provider interface
-│   ├── tools/           # tool contract, registry, policy
-│   ├── session/         # history and summary persistence
-│   ├── memory/          # added in Steps 8–9
-│   ├── runtime/         # queue and event bus
-│   └── transport/http/  # HTTP handler
-└── migrations/
-```
+### Theory
 
-## Canonical data types
+Read [00 — Architecture Overview](../00-architecture-overview.md) and skim [04 — Gateway and Protocol](../04-gateway-protocol.md). External formats must be normalized once at the boundary. The agent loop must not decode OpenAI JSON, HTTP payloads, or database rows.
 
-Every external format is translated into these types once. The agent loop should never decode OpenAI JSON or database rows directly.
+### Practice guide
+
+Create `internal/model/types.go`:
 
 ```go
-// internal/model/types.go
 package model
 
-import "context"
-
 type Message struct {
-	Role       string // system, user, assistant, tool
+	Role       string
 	Content    string
 	ToolCallID string
 	ToolName   string
@@ -49,15 +35,17 @@ type ToolCall struct {
 type ToolDefinition struct {
 	Name        string
 	Description string
-	Parameters  map[string]any // JSON Schema object
+	Parameters  map[string]any
 }
 
-type Usage struct { PromptTokens, CompletionTokens, TotalTokens int }
+type Usage struct {
+	PromptTokens, CompletionTokens, TotalTokens int
+}
 
 type ChatRequest struct {
-	Model    string
-	Messages []Message
-	Tools    []ToolDefinition
+	Model     string
+	Messages  []Message
+	Tools     []ToolDefinition
 	MaxTokens int
 }
 
@@ -67,28 +55,36 @@ type ChatResponse struct {
 	FinishReason string
 	Usage        Usage
 }
+```
 
+Keep the first model small. Add fields only when a later task needs durable behavior.
+
+## Task 2 — Define provider and run contracts
+
+### Theory
+
+Interfaces belong close to the code that consumes them. This keeps the agent independent from a specific provider SDK or storage implementation.
+
+### Practice guide
+
+Add the provider interface to `internal/model`:
+
+```go
 type Provider interface {
 	Name() string
 	Chat(context.Context, ChatRequest) (ChatResponse, error)
 }
 ```
 
-## Run and persistence contracts
+Create `internal/agent/types.go`:
 
 ```go
-// internal/agent/types.go
-package agent
-
-import (
-	"context"
-	"agentkit/internal/model"
-)
-
 type RunRequest struct {
-	TenantID, AgentID, UserID, SessionKey string
-	Message string
-	Stream  func(string) // optional token/event sink
+	ProjectID  string
+	AgentID    string
+	UserID     string
+	SessionKey string
+	Message    string
 }
 
 type RunResult struct {
@@ -97,29 +93,67 @@ type RunResult struct {
 	Iterations int
 	ToolCalls  int
 }
-
-type SessionStore interface {
-	Load(ctx context.Context, key string) (history []model.Message, summary string, err error)
-	Append(ctx context.Context, key string, messages ...model.Message) error
-	SetSummary(ctx context.Context, key, summary string) error
-}
 ```
 
-Keep the `SessionStore` interface close to the consumer. GoClaw follows the same pattern at much larger scope: `internal/store` defines focused interfaces, then `pg` and `sqlitestore` implement them. It avoids coupling the agent to `database/sql`.
+Do not put mutable history, counters, or cancellation on a shared runner. They belong to one `RunRequest` execution.
 
-## Composition root
+## Task 3 — Define the session boundary
 
-Only `internal/app` may know concrete implementations. This makes production replacements small and test doubles easy.
+### Theory
+
+Read [06 — Store Layer and Data Model](../06-store-data-model.md). The agent should depend on conversation behavior, not SQL tables.
+
+### Practice guide
+
+Place this interface near its consumer:
 
 ```go
-type App struct { Runner *agent.Runner }
-
-func New(cfg Config, db *sql.DB, p model.Provider) (*App, error) {
-	sessions := postgres.NewSessionStore(db)
-	registry := tools.NewRegistry(tools.NewClock())
-	registry.Register(tools.NewTime())
-	return &App{Runner: agent.NewRunner(p, sessions, registry, cfg.Agent)}, nil
+type SessionStore interface {
+	Load(ctx context.Context, agentID, userID, key string) ([]model.Message, string, error)
+	Append(ctx context.Context, agentID, userID, key string, messages ...model.Message) error
+	SetSummary(ctx context.Context, agentID, userID, key, summary string) error
 }
 ```
 
-The next step gives the storage layer a concrete home; keep these contracts small enough that database and provider choices can change without rewriting the agent loop.
+Scope is explicit in this teaching project. Step 14 later moves trusted identity into `context.Context` at the gateway boundary.
+
+## Task 4 — Load and validate configuration
+
+### Practice guide
+
+Create `internal/app/config.go` with these groups:
+
+```go
+type Config struct {
+	HTTP     HTTPConfig
+	Database DatabaseConfig
+	Provider ProviderConfig
+	Agent    AgentConfig
+	Runtime  RuntimeConfig
+}
+```
+
+At minimum, load:
+
+- HTTP address and one demo bearer token.
+- PostgreSQL URL.
+- Provider base URL, API key, and model.
+- Workspace root and enabled local skills.
+- Context, output, iteration, tool-call, and concurrency limits.
+
+Validate required values at startup. Do not log the provider key or bearer token. Commit an `.env.example`, not a real `.env` file.
+
+## Task 5 — Prove dependency inversion
+
+### Practice guide
+
+Write two compile-time fakes:
+
+```go
+var _ model.Provider = (*fakeProvider)(nil)
+var _ agent.SessionStore = (*memorySessions)(nil)
+```
+
+Add tests that construct an agent runner with both fakes. The test does not need a real model or database yet.
+
+This step is complete when `go test ./...` passes and `internal/agent` imports neither an OpenAI SDK nor a PostgreSQL driver.

@@ -1,93 +1,126 @@
 # Step 7 — Session History and Context Budget
 
-**Knowledge depth: 7/10**  
+**Knowledge depth: 8/10**
 
-Read the history and compaction sections in [01 — Agent Loop](../01-agent-loop.md), then connect them to the persistence model in [06 — Store Layer and Data Model](../06-store-data-model.md). [07 — Bootstrap, Skills & Memory](../07-bootstrap-skills-memory.md) explains why a session summary is not long-term memory.
+This step keeps long conversations valid, ordered, and within the model context window.
 
-## Session is not memory
+## Task 1 — Separate history, summary, and memory
 
-A **session** is the transcript for one active conversation. It optimizes continuity and auditability. It is not a good long-term knowledge store: it grows without limit, contains accidental details, and has only one conversation scope.
+### Theory
+
+Read [01 — Agent Loop](../01-agent-loop.md), [06 — Store Layer and Data Model](../06-store-data-model.md), and the context sections of [07 — Bootstrap, Skills & Memory](../07-bootstrap-skills-memory.md).
+
+These are different data layers:
 
 ```text
-Session history: exact recent interaction
-Session summary: compressed older interaction
-Long-term memory: retrieved facts from many sessions     ← Step 8
+Recent history   exact messages for the current session
+Session summary  compact checkpoint of older turns
+Long-term memory retrieved facts across sessions (Steps 8–9)
 ```
 
-GoClaw has a focused `SessionStore` interface in `internal/store/session_store.go`, with PostgreSQL and SQLite implementations. Its pipeline loads history and summary before prompt construction, checks token pressure each iteration, checkpoints messages, and may summarize after a turn.
+Do not treat an embedding store as chat history. Provider protocols require exact message and tool-call ordering.
 
-## Minimum schema
+### Practice guide
 
-Store whole canonical messages as JSON initially; normalize later only when query needs justify it.
+Review the Step 3 schema and store. Confirm that `Load` returns summary separately from ordered messages. Add a query that can load a bounded recent suffix without changing message ordinals.
 
-```sql
-CREATE TABLE sessions (
-  agent_id UUID NOT NULL,
-  user_id TEXT NOT NULL,
-  session_key TEXT NOT NULL,
-  summary TEXT NOT NULL DEFAULT '',
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (agent_id, user_id, session_key)
-);
+## Task 2 — Build provider-valid history
 
-CREATE TABLE session_messages (
-  id BIGSERIAL PRIMARY KEY,
-  agent_id UUID NOT NULL,
-  user_id TEXT NOT NULL,
-  session_key TEXT NOT NULL,
-  ordinal BIGINT NOT NULL,
-  message JSONB NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (agent_id, user_id, session_key, ordinal),
-  FOREIGN KEY (agent_id, user_id, session_key) REFERENCES sessions(agent_id, user_id, session_key)
-);
-CREATE INDEX session_messages_lookup
-  ON session_messages (agent_id, user_id, session_key, ordinal);
-```
+### Practice guide
 
-Every query includes `agent_id` and `user_id`, even if the session key appears globally unique. GoClaw adds `tenant_id` for a multi-tenant deployment; Step 14 explains that extension without making it part of this project.
-
-## Correct history construction
+Implement history construction in one place:
 
 ```go
-func buildPrompt(system, summary string, history []model.Message, user string) []model.Message {
+func buildMessages(system, summary string, history []model.Message, user string) []model.Message {
 	msgs := []model.Message{{Role: "system", Content: system}}
 	if summary != "" {
-		msgs = append(msgs, model.Message{Role: "system", Content: "Conversation summary:\n" + summary})
+		msgs = append(msgs, model.Message{
+			Role: "system", Content: "Conversation summary:\n" + summary,
+		})
 	}
 	msgs = append(msgs, history...)
 	return append(msgs, model.Message{Role: "user", Content: user})
 }
 ```
 
-Rules:
+Enforce these invariants:
 
-1. Preserve tool-call pairs. Never keep an assistant request without its tool results, or a result without its request.
-2. Append messages in provider-valid order.
-3. Save the user input before model work if you want cancelled work to remain visible; otherwise use a transaction with an explicit status.
-4. Do not use `[]Message` in an in-process map as your production source of truth.
+1. Roles appear in a provider-valid order.
+2. An assistant tool request and all matching tool results stay together.
+3. The current user message appears once.
+4. Transient WebSocket events never enter provider history.
 
-## Budget and compaction policy
+## Task 3 — Count and allocate tokens
 
-Use a real tokenizer for your model family in production. GoClaw centralizes this in `internal/tokencount` and tracks context window / output limits in pipeline configuration.
+### Theory
+
+Context space must reserve room for the system prompt, tool schemas, model output, and estimation error. Use a tokenizer compatible with the chosen model when available.
+
+### Practice guide
+
+Centralize token counting behind an interface:
 
 ```go
-func budget(window, systemTokens, toolTokens, outputLimit int) int {
-	reserve := max(window/10, 512) // protect against estimation drift
+type TokenCounter interface {
+	CountMessages([]model.Message) int
+	CountText(string) int
+}
+```
+
+Calculate the history budget:
+
+```go
+func historyBudget(window, systemTokens, toolTokens, outputLimit int) int {
+	reserve := max(window/10, 512)
 	return max(0, window-systemTokens-toolTokens-outputLimit-reserve)
 }
 ```
 
-Prune in this order:
+Fail early if stable system instructions and tool definitions already exceed the window.
 
-```text
-1. remove transient UI events and obsolete scratch data
-2. truncate oversized tool output, retaining an explicit truncation notice
-3. preserve recent complete turns and all required tool-call pairs
-4. summarize the oldest coherent block
-5. save the summary, then remove the summarized raw history
-```
+## Task 4 — Prune without breaking tool pairs
 
-The summary must be a durable checkpoint, not a string sent only to the next request. A crash after a transient compaction otherwise loses context forever.
+### Practice guide
 
-Once this foundation is clear, the next two steps can add durable memory without confusing it with ordinary conversation history.
+Apply this order:
+
+1. Remove transient scratch content that is not durable conversation.
+2. Truncate oversized tool output and add an explicit truncation notice.
+3. Preserve the newest complete turns.
+4. Select the oldest complete turns for summarization.
+5. Never split an assistant tool request from its results.
+
+Represent complete turns or message groups in code instead of deleting individual messages by index.
+
+## Task 5 — Save a durable summary checkpoint
+
+### Theory
+
+A summary sent only to the next model call is unsafe. A process crash would lose the compacted context.
+
+### Practice guide
+
+When compaction is required:
+
+1. Select the oldest coherent message range.
+2. Ask the provider for a factual, instruction-free summary.
+3. Store the new summary.
+4. Mark or delete only the summarized range in the same transaction or a recoverable sequence.
+5. Rebuild the prompt and confirm it fits the budget.
+
+Include durable facts, decisions, unresolved questions, and important references. Exclude hidden reasoning and any claim not present in the source messages.
+
+## Task 6 — Verify long-session behavior
+
+### Practice guide
+
+Create a fixture with many turns, at least two tool-call pairs, and one oversized tool result. Assert that:
+
+- The final prompt is within budget.
+- Recent turns remain exact.
+- Tool pairs remain complete and ordered.
+- Truncation is visible.
+- The summary survives a new store instance.
+- Repeated compaction does not summarize the same range twice.
+
+This step is complete when a long session can continue after restart without invalid provider history.

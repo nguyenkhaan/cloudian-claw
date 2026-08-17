@@ -1,18 +1,46 @@
 # Step 1 — Project Scope and Folder Structure
 
-**Knowledge depth: 4/10**  
+**Knowledge depth: 4/10**
 
-Start by reading [00 — Architecture Overview](../00-architecture-overview.md). Focus on the startup path, package responsibilities, and the boundary between a small agent core and GoClaw's larger platform.
+This step defines the product boundary and creates the project skeleton. Do not implement agent behavior yet.
 
-GoClaw is not just an LLM wrapper. It is a multi-surface agent gateway: a request enters through a channel, CLI, HTTP, or WebSocket; a scheduler protects ordering; an agent pipeline calls a provider and tools; stores keep context and memory; results are delivered back through the original surface.
+## Task 1 — Understand the runtime path
 
-## The project we will build
+### Theory
 
-This course follows GoClaw's boundaries but intentionally keeps the implementation suitable for a student project:
+Read [00 — Architecture Overview](../00-architecture-overview.md). Focus on the startup path, package responsibilities, and the boundary between the agent core and GoClaw's platform features.
+
+GoClaw is a gateway, not only an LLM wrapper. A request enters through a transport, waits in a session queue, runs through an agent pipeline, may call tools, persists durable state, and returns through the same transport.
+
+```text
+request → session queue → agent pipeline → provider/tools → store → response
+```
+
+### Practice guide
+
+Write this runtime path in the project README. For each arrow, identify the package that will own it:
+
+| Runtime responsibility | Project package |
+|---|---|
+| Process composition | `internal/app` |
+| Agent execution | `internal/agent` |
+| Provider-neutral types | `internal/model` |
+| Tool execution and policy | `internal/tools` |
+| Session persistence | `internal/session`, `internal/store/postgres` |
+| Queue and events | `internal/runtime` |
+| HTTP and WebSocket | `internal/transport` |
+
+The mapping is complete when one responsibility has one clear owner.
+
+## Task 2 — Fix the project scope
+
+### Theory
+
+The course builds one complete vertical slice:
 
 ```text
 One Go gateway + one React web UI
-One OpenAI-compatible provider adapter
+One OpenAI-compatible provider
 PostgreSQL with pgvector
 One agent profile and per-user sessions
 Conversation memory and a small tool set
@@ -20,82 +48,85 @@ HTTP API + WebSocket streaming
 Structured logs and a simple run timeline
 ```
 
-We will study channels, teams, multiple providers, skill publishing, scheduled autonomy, and multi-tenancy as GoClaw architecture. We will not implement them in this project. That keeps the system coherent instead of producing many incomplete integrations.
+Channels, teams, multiple providers, skill publishing, cron/heartbeat, and multi-tenancy are useful GoClaw architecture topics. They are not part of the first implementation.
 
-## Begin with a useful slice
+### Practice guide
 
-Build this first:
+Add a short `Scope` section to the project README with two lists:
 
-```mermaid
-flowchart LR
-    I[CLI or HTTP request] --> S[Session queue]
-    S --> A[Agent pipeline]
-    A --> P[LLM provider]
-    P -->|tool calls| T[Tool registry]
-    T --> A
-    A --> D[(Session store)]
-    A --> O[Response]
-```
+- `Build now`: the seven items above.
+- `Later extensions`: channels, teams, provider routing, skill publishing, autonomous schedules, and multi-tenancy.
 
-Everything else is an extension of one of those arrows.
+Use this scope when a later task suggests extra infrastructure. If a feature is in `Later extensions`, keep only the interface seam required by the current project.
 
-| Concern | Student-project version | GoClaw reference |
-|---|---|---|
-| Entry | HTTP, WebSocket, and a small CLI | `internal/http`, `internal/gateway`, `cmd` |
-| Execution | one loop and queue per session | `internal/pipeline`, `internal/agent` |
-| Model | one OpenAI-compatible provider | `internal/providers`, `internal/providerresolve` |
-| State | agents, sessions, messages, memories, traces | `internal/store/session_store.go` |
-| Action | memory search plus workspace file tools | `internal/tools` |
-| Persistence | PostgreSQL + pgvector | `internal/store/pg`, `migrations/` |
+## Task 3 — Create the folder structure
 
-## Read the real architecture in this order
+### Practice guide
+
+Create this structure. Empty directories do not need placeholder files; create each package when its step starts.
 
 ```text
-main.go
-  cmd/root.go, cmd/gateway.go           process composition
-  internal/gateway/server.go            HTTP + WebSocket boundary
-  internal/agent/router.go              agent lookup/cache
-  internal/agent/loop_pipeline_adapter.go
-  internal/pipeline/pipeline.go         execution flow
-  internal/providers/types.go           model-neutral contract
-  internal/tools/types.go               tool contract
-  internal/store/session_store.go       durable conversation contract
+cloudianclaw/
+├── cmd/agentkit/          process entry point
+├── internal/app/          dependency composition
+├── internal/agent/        request, prompt, and loop
+├── internal/model/        canonical model/provider types
+├── internal/tools/        registry and policy
+├── internal/session/      history and summaries
+├── internal/memory/       added in Steps 8–9
+├── internal/runtime/      queue and domain events
+├── internal/transport/
+│   ├── http/
+│   └── websocket/
+├── internal/store/postgres/
+├── migrations/
+├── skills/                local SKILL.md packages
+├── web/                   React application
+├── go.mod
+└── docker-compose.yml
 ```
 
-The current runtime is a pipeline. Its public comment names eight logical phases:
+Use `cmd/agentkit` as the only executable. Keep `main.go` small: load configuration, build the app, run the selected command, and report startup errors.
+
+## Task 4 — Initialize a buildable Go module
+
+### Practice guide
+
+Initialize the module and add a minimal entry point:
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("agentkit: setup complete")
+}
+```
+
+Run:
+
+```bash
+go test ./...
+go run ./cmd/agentkit
+```
+
+Expected output:
 
 ```text
-context → history → prompt → think → act → observe → memory → summarize
+agentkit: setup complete
 ```
 
-In code, some phases are grouped: `ContextStage` prepares context/history/prompt; `ThinkStage` calls the model; `ToolStage` acts; `ObserveStage` records model output; pruning and checkpoint stages manage context and persistence.
+## Task 5 — Check the architecture boundary
 
-## Separate core from platform features
+### Practice guide
 
-This separation prevents a common failure: reproducing directories instead of reproducing behavior.
+Review the tree using these rules:
 
-```text
-Core agent
-├── canonical messages
-├── provider interface
-├── bounded think → tool → observe loop
-├── session persistence
-└── tool authorization
+1. `internal/agent` does not import HTTP, WebSocket, SQL drivers, or OpenAI wire types.
+2. `internal/transport` does not contain prompt or tool-selection logic.
+3. `internal/store/postgres` contains SQL details; consumer packages expose small interfaces.
+4. Socket connections, API secrets, and raw media are not modeled as durable messages.
+5. Run-specific messages, counters, cancellation, and spans will belong to each request, not a shared singleton.
 
-GoClaw platform features studied but not implemented here
-├── multi-tenancy / RBAC / encrypted credentials at platform scale
-├── Telegram, Discord, WhatsApp, Feishu, Zalo, and other channels
-├── MCP servers, OAuth, ACP, browser, sandbox, media, and TTS
-├── teams, delegation, cron, and heartbeat
-└── desktop client and self-evolving skills
-```
-
-## Architecture rules to adopt now
-
-1. **Normalize at boundaries.** Providers and tools have vendor-specific shapes; the agent loop must not.
-2. **Keep run state per run.** A shared loop object may hold dependencies, but messages, counters, spans, and cancellation must belong to the request.
-3. **Serialize a session by default.** Two simultaneous turns on the same history cause incorrect answers and lost writes.
-4. **Persist only durable facts.** Do not store socket connections, raw API secrets, or giant base64 media in message history.
-5. **Use `context.Context` for scope and cancellation.** GoClaw propagates tenant, agent, user, locale, and workspace through context-aware stores.
-
-As you create the folders, keep the architecture deliberately small: one process, one provider adapter, a durable store, and a narrow tool surface. The later steps grow this core into a complete web product.
+This step is complete when the module builds, the folder responsibilities are documented, and the project scope is explicit.

@@ -1,40 +1,26 @@
 # Step 4 — LLM Provider Adapter
 
-**Knowledge depth: 6/10**  
+**Knowledge depth: 6/10**
 
-Read [02 — LLM Providers](../02-providers.md) carefully before choosing an API. This project implements one OpenAI-compatible adapter with streaming and tool calls. Refer to [12 — Extended Thinking](../12-extended-thinking.md) to understand provider reasoning controls; [18 — ACP Provider](../18-acp-provider.md) is architecture study only, not an integration to build here.
+This step connects one OpenAI-compatible model endpoint without leaking provider wire types into the agent core.
 
-## Why this boundary matters
+## Task 1 — Define provider capabilities
 
-Providers disagree on request JSON, server-sent events, tool argument fragments, reasoning blocks, image fields, and whether tool calls can be streamed. Letting those differences into orchestration turns every new provider into a rewrite.
+### Theory
 
-GoClaw keeps the agent-facing contract in `internal/providers/types.go`; adapters translate provider wire shapes. `ProviderCapabilities` in `internal/providers/capabilities.go` tells the caller which behavior is safe.
+Read [02 — LLM Providers](../02-providers.md). Providers differ in streaming, tool calls, reasoning fields, and media support. [12 — Extended Thinking](../12-extended-thinking.md) explains reasoning controls. [18 — ACP Provider](../18-acp-provider.md) is reference architecture only.
 
-```mermaid
-flowchart LR
-  A[Agent pipeline] --> C[Canonical ChatRequest]
-  C --> P[Provider interface]
-  P --> O[OpenAI adapter]
-  P --> N[Anthropic adapter]
-  P --> X[Future adapter]
-  O --> R[Canonical ChatResponse]
-  N --> R
-  X --> R
-  R --> A
-```
+Capabilities tell the agent which request path is valid before bytes are sent.
 
-## Keep a small capability model
+### Practice guide
+
+Add these types to `internal/model`:
 
 ```go
-package model
-
-import "context"
-
 type Capabilities struct {
 	Streaming       bool
 	ToolCalling     bool
 	StreamWithTools bool
-	Vision          bool
 }
 
 type StreamChunk struct {
@@ -45,58 +31,110 @@ type StreamChunk struct {
 type StreamingProvider interface {
 	Provider
 	Capabilities() Capabilities
-	ChatStream(ctx context.Context, req ChatRequest, onChunk func(StreamChunk)) (ChatResponse, error)
+	ChatStream(
+		ctx context.Context,
+		req ChatRequest,
+		onChunk func(StreamChunk) error,
+	) (ChatResponse, error)
 }
 ```
 
-`StreamWithTools` is not cosmetic. In GoClaw, DashScope reports it as false and falls back to non-streaming when tools are present. Your pipeline must make the same kind of decision before sending bytes.
+For this project, report streaming and tool calling as supported. If the selected endpoint cannot stream tool calls, set `StreamWithTools` to false and use non-streaming whenever tools are present.
 
-## One OpenAI-compatible adapter
+## Task 2 — Create wire types and translators
 
-This adapter is enough for the course. Retain the capability contract because it documents what the loop may expect, but do not spend the project budget implementing a provider registry, fallback routing, or ACP process management.
+### Theory
+
+Wire types describe the provider JSON. Canonical types describe the agent. Keep them separate even when fields look similar.
+
+### Practice guide
+
+Create `internal/providers/openai/types.go` and `mapping.go`. Implement:
 
 ```go
-type OpenAIProvider struct {
-	baseURL, apiKey, defaultModel string
-	httpClient *http.Client
+func toOpenAIRequest(model.ChatRequest, bool) openAIRequest
+func fromOpenAIResponse(openAIResponse) (model.ChatResponse, error)
+```
+
+Map:
+
+- Canonical roles and content.
+- Tool definitions to OpenAI function tools.
+- Assistant tool calls and matching tool results.
+- Usage and finish reason.
+- JSON tool arguments into `map[string]any`.
+
+If a tool call has no ID, generate one. If arguments are malformed, return a model-visible tool error later; do not guess values.
+
+## Task 3 — Implement non-streaming chat
+
+### Practice guide
+
+Create `internal/providers/openai/provider.go`:
+
+```go
+type Provider struct {
+	baseURL     string
+	apiKey      string
+	defaultModel string
+	httpClient  *http.Client
 }
 
-func (p *OpenAIProvider) Name() string { return "openai-compatible" }
-func (p *OpenAIProvider) Capabilities() Capabilities {
-	return Capabilities{Streaming: true, ToolCalling: true, StreamWithTools: true}
-}
-
-func (p *OpenAIProvider) Chat(ctx context.Context, req ChatRequest) (ChatResponse, error) {
+func (p *Provider) Chat(ctx context.Context, req model.ChatRequest) (model.ChatResponse, error) {
 	body, err := json.Marshal(toOpenAIRequest(req, false))
-	if err != nil { return ChatResponse{}, fmt.Errorf("encode chat request: %w", err) }
+	if err != nil {
+		return model.ChatResponse{}, fmt.Errorf("encode provider request: %w", err)
+	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		strings.TrimRight(p.baseURL, "/")+"/chat/completions", bytes.NewReader(body))
-	if err != nil { return ChatResponse{}, fmt.Errorf("create chat request: %w", err) }
+	if err != nil {
+		return model.ChatResponse{}, fmt.Errorf("create provider request: %w", err)
+	}
 	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := p.httpClient.Do(httpReq)
-	if err != nil { return ChatResponse{}, fmt.Errorf("call provider: %w", err) }
+	if err != nil {
+		return model.ChatResponse{}, fmt.Errorf("call provider: %w", err)
+	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		limited, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		return ChatResponse{}, fmt.Errorf("provider status %d: %s", resp.StatusCode, limited)
-	}
-	var wire openAIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
-		return ChatResponse{}, fmt.Errorf("decode provider response: %w", err)
-	}
-	return fromOpenAIResponse(wire)
+	// Check status, decode a bounded body, then call fromOpenAIResponse.
 }
 ```
 
-## Non-negotiable adapter rules
+Use a client timeout and also honor `ctx`. Limit non-success response bodies, for example to 64 KiB. Never include the API key in an error.
 
-- Generate a unique tool-call ID when a provider does not provide one.
-- Treat malformed tool JSON as a model-visible tool error; never panic or guess unsafe arguments.
-- Preserve exact assistant tool-call information until all paired tool results are returned.
-- Apply timeouts outside and inside the adapter. A client with no timeout can exhaust your scheduler.
-- Never retry after streaming output has reached a user. GoClaw tests this case in `internal/providers/model_fallback_test.go`.
+## Task 4 — Implement streaming
 
-The important learning point is that the agent sees only one provider-neutral response shape, regardless of the API that produced it.
+### Theory
+
+OpenAI-compatible streaming normally uses server-sent events. Tool arguments may arrive as fragments and must be joined before JSON decoding.
+
+### Practice guide
+
+In `ChatStream`:
+
+1. Send the same request with `stream: true`.
+2. Scan SSE `data:` frames with a configured maximum frame size.
+3. Emit text deltas through `onChunk`.
+4. Accumulate tool-call fragments by choice index and tool-call index.
+5. On `[DONE]`, assemble one canonical `ChatResponse`.
+6. Stop immediately when the callback or context returns an error.
+
+Do not automatically retry after a text delta has reached the caller. A retry could duplicate visible output or repeat a tool proposal.
+
+## Task 5 — Test the adapter boundary
+
+### Practice guide
+
+Use `httptest.Server` to cover:
+
+1. A normal assistant text response.
+2. One tool call with valid JSON arguments.
+3. A streamed response split across several SSE frames.
+4. Fragmented tool arguments.
+5. A non-2xx response with a large body.
+6. Context cancellation.
+
+Add a manual smoke command that sends a short prompt to the configured endpoint. The step is complete when the core receives only canonical responses and logs contain no provider secret.
