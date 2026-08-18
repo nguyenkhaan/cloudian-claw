@@ -1,7 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"cloudian/cloudian-claw/cmd/agentkit"
+)
 
 func main() {
-	fmt.Println("Hello world. Go claw build with Cloudian 💙 Cloud")
+	agentkit.Execute() 
 }
