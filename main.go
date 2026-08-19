@@ -39,6 +39,7 @@ func main() {
 		Model: model, 
 		Messages: messages,
 	}
+	var count = 0 
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print("> ") 
@@ -68,8 +69,16 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		} 
-		fmt.Println("[AGENT]: ", response.Choices[0].Message.Content) 
+		output := response.Choices[0].Message.Content 
+
+		fmt.Println("[AGENT]: ", output) 
+		params.Messages = append(params.Messages , openai.AssistantMessage(output)) 
 		//Build the agent loop fuck u :v 
+		count++ 
+		if count >= 10 {
+			params.Messages = params.Messages[(count-4) : ]
+			count = 0; 
+		}
 	}
 
 }

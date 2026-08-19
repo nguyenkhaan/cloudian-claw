@@ -6,7 +6,7 @@
 
 Define the architectural blueprint, component responsibilities, runtime execution model, request flow, data flow, failure behavior, and implementation boundaries of the local AI Agent Gateway system.
 
-The architecture is designed around a single core principle:
+The architecture is designed around a single core principle: 
 
 > **Agent Loop is the central execution orchestrator of the Agent Runtime.**
 
@@ -23,6 +23,8 @@ The Agent Loop owns the execution lifecycle of an Agent invocation, while specia
 * Gateway and Agent Router handle request admission and routing before execution.
 
 The system is local-first and single-owner. It does not include multi-tenant organization management or multi-agent orchestration.
+
+It is like an AI Agent harness. That can turn an LLM into an Agent can execute tasks 
 
 ---
 

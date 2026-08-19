@@ -14,14 +14,14 @@
 
 | Nhóm | Chức năng giữ lại | Ghi chú |
 |---|---|---|
-| Auth & Gateway | Xác thực bằng Gateway API Token | Không có khái niệm Team/Org — 1 instance local, 1 chủ sở hữu |
+| Auth & Gateway | Xác thực bằng Gateway API Token | Không có khái niệm Team/Org — 1 instance local, 1 chủ sở hữu. Token được cấu hình tĩnh trong file .env và lưu tại LocalStorage phía Client, xác thực qua header Authorization: Bearer. |
 | Provider | Lưu & xác thực API key provider (OpenRouter, Vercel...), khám phá model theo provider | Nhiều provider cùng lúc, không giới hạn 1 model cố định |
 | Agent | CRUD agent (SOUL.md, IDENTITY.md), clone agent làm template | Không có Subagent — mỗi agent độc lập, không phân cấp cha/con |
-| Skill | Load, validate, version, gán skill cho agent | Skill lấy từ filesystem local, không có kho skill từ xa/marketplace |
+| Skill | Load, validate, version, gán skill cho agent | Skill lấy từ filesystem local, không có kho skill từ xa/marketplace. Skill thuần túy là tài liệu hướng dẫn bằng ngôn ngữ tự nhiên (Markdown + YAML frontmatter), không chứa mã thực thi; nhiệm vụ thực thi thuộc về Tool Registry. |
 | Tool | Đăng ký tool, kiểm soát quyền truy cập tool theo agent, log thực thi | Không có Delegation (agent giao việc cho agent khác qua tool) |
 | Rules | CRUD rule, gán rule cho agent, versioning, sandbox test | Gán theo từng agent, không có khái niệm "nhóm agent"/Team |
 | Session | Tạo, lưu, khôi phục session; lịch sử hội thoại | — |
-| Memory | Cấu hình embedding (provider, model, chunk size, overlap), nén hội thoại (compaction) | — |
+| Memory | Cấu hình embedding (provider, model, chunk size, overlap), nén hội thoại (compaction) | Lưu trữ vector dạng mảng số thực (double precision[] hoặc jsonb) trong PostgreSQL và tính độ tương đồng (Cosine Similarity) trực tiếp trong Go để đảm bảo tính di động cục bộ. |
 | Monitoring | Thu thập trace, latency, token usage, error rate | — |
 | Realtime Events | Phát sự kiện real-time (chat message, reasoning step, tool call, skill activation) | Chỉ phục vụ hiển thị nội bộ, không phải Webhook ra ngoài |
 | API Key | Tạo/thu hồi API key có scope, xem usage | Dùng để agent hoặc client ngoài gọi vào hệ thống — không phải Channel tích hợp nền tảng thứ ba |
@@ -84,7 +84,7 @@ Mỗi usecase trình bày dạng luồng thao tác đánh số + mô tả ngắn
 ### UC-03: Chat với Agent
 **Mô tả**: Tương tác hội thoại với agent đã tạo.
 1. Chọn agent từ danh sách hoặc mở session cũ
-2. Nhập tin nhắn (kèm file/ảnh nếu cần)
+2. Nhập tin nhắn (kèm file/ảnh nếu cần). File đính kèm sẽ được upload lên thư mục cục bộ của backend, lưu filepath trong DB và hiển thị qua static file endpoint, thiết kế trừu tượng để sau này dễ chuyển đổi sang Cloudinary.
 3. Hệ thống stream phản hồi theo thời gian thực
 4. Nếu agent gọi tool → hiển thị tool call + kết quả trong panel
 5. Session được lưu tự động sau mỗi lượt
@@ -110,7 +110,7 @@ Mỗi usecase trình bày dạng luồng thao tác đánh số + mô tả ngắn
 **Mô tả**: Định nghĩa ràng buộc hành vi.
 1. Mở Rules Management → Create Rule
 2. Viết nội dung rule
-3. Test rule trong sandbox
+3. Test rule trong sandbox (Thực hiện cuộc gọi LLM thực tế qua mock session với tin nhắn mẫu và rule thử nghiệm để đánh giá phản hồi, không lưu vào DB Session thực tế)
 4. Gán rule cho agent
 5. Lưu → rule có hiệu lực ở lượt chat kế tiếp
 
