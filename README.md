@@ -1,4 +1,4 @@
-# Cloudclaw
+# CloudianClaw
 
 [![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
@@ -10,7 +10,7 @@
 [![Local-first](https://img.shields.io/badge/Deployment-Local--first-brightgreen)](#)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](#)
 
-**Cloudclaw** is a local-first, single-owner **AI Agent Gateway**. It acts as an
+**CloudianClaw** is a local-first, single-owner **AI Agent Gateway**. It acts as an
 *Agent Harness* that turns Large Language Models into independent AI Agents for
 coding assistance and troubleshooting. The system is built around a single
 **Agent Loop** orchestrator, surrounded by specialized capabilities (Provider
@@ -25,7 +25,7 @@ events, and Tracing).
 
 ## Overview
 
-Cloudclaw lets you run, configure, and observe AI Agents from a **React
+CloudianClaw lets you run, configure, and observe AI Agents from a **React
 Dashboard**, a **Terminal CLI**, or external clients via API keys. It is local,
 offline-friendly, and portable:
 
@@ -71,7 +71,7 @@ contracts live under `internal/domain`, concrete implementations under
 `internal/tui`.
 
 ```text
-cloudclaw/
+CloudianClaw/
 ├── cmd/
 │   └── agentkit/            # CLI binary entrypoint (Cobra commands: serve, chat, ...)
 │
@@ -115,7 +115,7 @@ cloudclaw/
 ├── web/                     # React + TypeScript + TailwindCSS Dashboard
 │
 ├── docs/                    # Project documentation
-│   ├── documents/           # PRD, architecture, idea (Cloudclaw-specific specs)
+│   ├── documents/           # PRD, architecture, idea (CloudianClaw-specific specs)
 │   ├── references/          # Upstream GoClaw study material (reference only)
 │   ├── guides/              # Setup/usage guides
 │   ├── plans/               # Implementation plan (plan.md)
@@ -130,7 +130,7 @@ cloudclaw/
 > **Note on references:** Files under `docs/references/` (incl. `STEP_INDEX.md`,
 > `README.md`) describe the upstream **GoClaw** project and are kept as study
 > material. They are *reference knowledge*, not the directory structure to copy.
-> The authoritative Cloudclaw layout is this scaffold and `docs/plans/plan.md`.
+> The authoritative CloudianClaw layout is this scaffold and `docs/plans/plan.md`.
 
 ---
 
@@ -148,8 +148,8 @@ cloudclaw/
 ### 2. Clone & install Go dependencies
 
 ```bash
-git clone <your-repo-url> cloudclaw
-cd cloudclaw
+git clone <your-repo-url> CloudianClaw
+cd CloudianClaw
 
 # Download Go module dependencies
 go mod download
@@ -180,7 +180,7 @@ SERVER_PORT=8080
 
 # --- PostgreSQL ---
 # The migration runner creates all tables automatically at startup.
-POSTGRES_URL=postgres://cloudclaw:cloudclaw@localhost:5432/cloudclaw?sslmode=disable
+POSTGRES_URL=postgres://CloudianClaw:CloudianClaw@localhost:5432/CloudianClaw?sslmode=disable
 
 # --- AI defaults (overridable per agent) ---
 DEFAULT_PROVIDER=openrouter
@@ -215,8 +215,8 @@ Create the database (if it does not exist) and let the server apply migrations:
 
 ```bash
 # Create the database role + database (one-time, using psql)
-createdb cloudclaw
-# or: psql -U postgres -c "CREATE DATABASE cloudclaw;"
+createdb CloudianClaw
+# or: psql -U postgres -c "CREATE DATABASE CloudianClaw;"
 ```
 
 Migrations run automatically when the server boots (see `internal/impl/database`).

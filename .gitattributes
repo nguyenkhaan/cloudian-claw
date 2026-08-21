@@ -1,0 +1,8 @@
+# Exclude JavaScript from GitHub language statistics
+*.js linguist-vendored
+*.jsx linguist-vendored
+*.mjs linguist-vendored
+*.cjs linguist-vendored
+
+# Go is the primary language
+*.go linguist-detectable=true
