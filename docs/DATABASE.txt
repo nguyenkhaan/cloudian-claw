@@ -32,7 +32,7 @@ table agent {
   context_pruning jsonb           // token budgeting policy
   tool_configs jsonb              // global/agent tool toggles
   skill_configs jsonb             // enabled skill ids
-  rule_configs jsonb              // assigned rule ids
+  rule_configs jsonb              // assigned rule ids [{id: , active : true , priority: number}]
   other_configs jsonb
 
   created_at datetime
@@ -197,8 +197,8 @@ table session {
   agent_id string
   user_id string 
   title string
-  model string                     // denormalized
-  provider string                  // denormalized
+  model string                      
+  provider string                
 
   status string                    // active | archived | closed
   compaction_count int
@@ -236,6 +236,7 @@ table memory_document {
   agent_id string
   workspace string
   path string
+  hash string 
   filename string
   content text
   created_at datetime
@@ -245,6 +246,7 @@ table memory_chunk {
   id string PK
   document_id string
   agent_id string
+  hash string 
   start_line int
   end_line int
   content text
@@ -322,12 +324,13 @@ table trace_span {
 
 table api_key {
   id string PK
-  label string
+  name string
   key_hash string                  // salted hash; plaintext shown once
   scopes jsonb                     // e.g. ["chat","read:agents"]
   expires_at datetime             // nullable = no expiry
   revoked bool
   created_at datetime
+  created_by string 
 }
 
 table api_key_usage {
@@ -335,9 +338,8 @@ table api_key_usage {
   api_key_id string
   called_at datetime
   endpoint string
-  status int
+  status string //success, failed
 }
-
 
 //----------------------------------------------------------------
 //RELATIONSHIPS (logical)

@@ -2,9 +2,6 @@ package entity
 
 import "time"
 
-// AgentType phân loại agent:
-//   - OpenAgentType:       cấu hình mở, cho phép tinh chỉnh tham số tại phiên.
-//   - PredefinedAgentType: cấu hình đóng, không cho phép tinh chỉnh tham số.
 type AgentType string
 
 const (
