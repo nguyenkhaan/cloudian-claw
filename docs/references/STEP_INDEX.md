@@ -1,4 +1,17 @@
-# AI Agent Module Map and Implementation Roadmap
+# AI Agent Module Map and Implementation Roadmap (GoClaw upstream reference)
+
+> **Cloudclaw note:** This roadmap was forked from the upstream **GoClaw** project
+> and is kept in `docs/references/` as *study material / source knowledge*. It
+> reflects GoClaw's conventions (e.g. `internal/providers`, `internal/skills`,
+> `internal/runtime`, and a `pgvector` + multi-tenant data model).
+>
+> **Cloudclaw's authoritative layout and module map differ.** Cloudclaw uses a
+> Domain-Driven Design scaffold (`internal/domain`, `internal/impl`,
+> `internal/transport`, `internal/tui`) and a single-owner data model with
+> `double precision[]` embeddings computed in Go (no `pgvector`). See
+> `README.md` > Folder structure and `docs/plans/plan.md` for the real mapping.
+> Treat the steps below as learning order and concept sourcing, not as the
+> directory structure to copy blindly.
 
 Follow the Steps in order. The roadmap starts with compile-time structure and small contracts, then adds infrastructure, agent behavior, memory, runtime interfaces, security, and the UI. Every Step produces a result that can be tested before the next module depends on it.
 
@@ -8,8 +21,8 @@ The first release is intentionally smaller than GoClaw:
 
 - One Go gateway and one React web application.
 - One OpenAI-compatible LLM provider.
-- PostgreSQL with pgvector.
-- One agent profile with per-user sessions.
+- PostgreSQL (**Cloudclaw**: `double precision[]` embeddings computed in Go via Cosine Similarity — **no pgvector**; GoClaw used pgvector).
+- One agent profile with single-owner sessions.
 - Durable history, summaries, and episodic memory.
 - A small tool set: `datetime`, `memory_search`, `read_file`, and approval-gated `write_file`.
 - HTTP, WebSocket streaming, and a thin CLI.

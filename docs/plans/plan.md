@@ -2,17 +2,18 @@
 
 ## 1. Implementation Overview
 - **Overall Implementation Strategy:** This project implements **Cloudclaw** (AI Agent Gateway local-first, single-owner). The implementation follows a bottom-up approach starting from the core domain types, application bootstrapping, and storage persistence layers. Once the foundation is laid, we implement the transport gateway, provider interfaces, tool registry, and agent loop execution orchestrator. Finally, memory similarity search, event tracing, the CLI, and the React Dashboard UI are integrated.
-- **Major Modules:**
-  - Core Domain & Application Container (`internal/model`, `internal/app`)
-  - PostgreSQL Persistence Store (`internal/store/postgres`)
-  - Gateway & Authentication Transport (`internal/transport`)
-  - Provider Abstraction & Model Execution (`internal/providers`)
-  - Skill and Rule Systems (`internal/skills`, `internal/rules`)
-  - Tool Registry & Permissions (`internal/tools`)
-  - Agent Loop & State Machine (`internal/runtime`)
-  - Session & Local Memory (`internal/session`, `internal/memory`)
-  - Observability & Realtime Events (`internal/tracing`, `internal/events`)
-  - CLI & React Dashboard Frontends (`cmd/agentkit`, `web/`)
+- **Major Modules (DDD layout — see `README.md` > Folder structure):**
+  - Core Domain & Model Types (`internal/model`, `internal/domain/{entity,event,interface,service}`)
+  - Config & Application Container (`internal/impl/config`)
+  - PostgreSQL Persistence Store (`internal/impl/store`, `internal/impl/store/postgres`, `internal/impl/database`)
+  - Gateway & Authentication Transport (`internal/transport/http`, `internal/transport/socket`)
+  - Provider Abstraction & Model Execution (`internal/impl/provider`)
+  - Skill and Rule Systems (`internal/impl/...` + `agent/skills`, `agent/rules`)
+  - Tool Registry & Permissions (`internal/impl/tool`)
+  - Agent Loop & State Machine (`internal/domain/service`)
+  - Session & Local Memory (`internal/impl/session`, `internal/impl/memory`)
+  - Observability & Realtime Events (`internal/transport/socket`, `internal/impl/...`)
+  - CLI & React Dashboard Frontends (`cmd/agentkit`, `internal/tui`, `web/`)
 - **Implementation Order & Dependencies:**
   1. Foundation & Bootstrapping (Phase 1)
   2. PostgreSQL Schema, Migrations & Stores (Phase 2)
@@ -32,18 +33,18 @@
 
 ## 2. Architecture → Implementation Mapping
 Below is the mapping of components defined in [architecture.md](file:///home/cloud/workspace/project/cloudclaw/docs/documents/architecture.md) and [idea.md](file:///home/cloud/workspace/project/cloudclaw/docs/documents/idea.md) to implementation Phases:
-* **Gateway & Authentication:** Phase 3 (Gateway Transport)
-* **Agent Router:** Phase 3 (Gateway Transport)
-* **Agent Loop & Context Builder:** Phase 7 (Runtime Agent Loop)
-* **Provider Abstraction:** Phase 4 (LLM Providers)
-* **Tool Registry:** Phase 6 (Tools System)
-* **Skill Loader & Rule Engine:** Phase 5 (Skills & Rules)
-* **Session Store:** Phase 8 (Session & Memory)
-* **Memory & Vector Search (Go Cosine):** Phase 8 (Session & Memory)
-* **Realtime Events System:** Phase 9 (Observability & Events)
-* **Tracing Store:** Phase 9 (Observability & Events)
-* **API Key & Config Store:** Phase 10 (API Keys & Config)
-* **Cobra CLI / React UI:** Phase 11 & Phase 12
+* **Gateway & Authentication:** Phase 3 (`internal/transport/http`)
+* **Agent Router:** Phase 3 (`internal/transport/http`)
+* **Agent Loop & Context Builder:** Phase 7 (`internal/domain/service`)
+* **Provider Abstraction:** Phase 4 (`internal/impl/provider`)
+* **Tool Registry:** Phase 6 (`internal/impl/tool`)
+* **Skill Loader & Rule Engine:** Phase 5 (`agent/skills`, `agent/rules` + `internal/impl/...`)
+* **Session Store:** Phase 8 (`internal/impl/session`, `internal/impl/store/postgres`)
+* **Memory & Vector Search (Go Cosine):** Phase 8 (`internal/impl/memory`)
+* **Realtime Events System:** Phase 9 (`internal/transport/socket`)
+* **Tracing Store:** Phase 9 (`internal/impl/store/postgres`)
+* **API Key & Config Store:** Phase 10 (`internal/impl/store/postgres`, `internal/impl/config`)
+* **Cobra CLI / React UI:** Phase 11 & Phase 12 (`cmd/agentkit`, `internal/tui`, `web/`)
 
 ---
 
@@ -53,13 +54,15 @@ Establish the compile-time contracts, base domain models, and core configuration
 
 ### Modules Covered
 * `internal/model`
-* `internal/app`
+* `internal/domain/{entity,event,interface,service}`
+* `internal/impl/config`
 
 ### Task 1.1 — Domain Entities Standardization
 - **Description:** Define Go structures representing the core components of the system.
 - **Objective:** Create compilation-stable domain models.
 - **Requirements:**
   - Define `Agent`, `Provider`, `Model`, `Skill`, `Rule`, `Tool`, `Session`, `Message`, `Memory`, `Execution`, `APIKey`, and `Config` structs in `internal/model`.
+  - Define `Usage` for calculate token per user'request 
   - Include basic validation functions for each entity.
   - Do not import any SQL driver or third-party HTTP transport libraries in `internal/model`.
 - **Implementation Guidance:** Use Go standard types. Map to the database schemas defined later. Refer to GoClaw's representation of domain entities in [06-store-data-model.md](file:///home/cloud/workspace/project/cloudclaw/docs/references/06-store-data-model.md).
@@ -83,7 +86,7 @@ Establish the compile-time contracts, base domain models, and core configuration
 - **Requirements:**
   - Load environment variables from `.env` using standard configuration patterns (e.g. `caarlos0/env` or custom loader).
   - Config must include: Server Host/Port, PostgreSQL URL, Default AI settings, Quota settings, Global Tools Toggle, and Execution limits (max tool calls, max retries, max duration, max context, max depth).
-  - Implement `Container` in `internal/app` to wire up configuration, database, stores, services, and gateways.
+  - Implement the application `Container` in `internal/impl/config` to wire up configuration, database, stores, services, and gateways.
 - **Implementation Guidance:** Read the configuration patterns in GoClaw's startup in [README.md](file:///home/cloud/workspace/project/cloudclaw/docs/references/README.md).
 - **Dependencies:** Task 1.2.
 - **Validation:** Run configuration load tests with invalid/missing variables to verify fail-fast behavior.
@@ -100,7 +103,9 @@ Set up the PostgreSQL relational schema and store implementations to allow durab
 
 ### Modules Covered
 * `migrations/`
-* `internal/store/postgres`
+* `internal/impl/store`
+* `internal/impl/store/postgres`
+* `internal/impl/database`
 
 ### Task 2.1 — Schema Design & Migrations
 - **Description:** Write SQL migrations for all tables in PostgreSQL.
@@ -136,7 +141,6 @@ Expose the server entry points via HTTP, validate incoming Gateway API Tokens, a
 
 ### Modules Covered
 * `internal/transport/http`
-* `internal/transport/router`
 
 ### Task 3.1 — HTTP Server & Token Authentication Middleware
 - **Description:** Launch the HTTP engine and protect endpoints with Gateway API Token verification.
@@ -174,8 +178,8 @@ Expose the server entry points via HTTP, validate incoming Gateway API Tokens, a
 Establish the LLM provider interfaces and implement the OpenAI-Compatible HTTP/SSE streaming connection.
 
 ### Modules Covered
-* `internal/providers`
-* `internal/providers/openai`
+* `internal/impl/provider`
+* `internal/impl/provider/openai`
 
 ### Task 4.1 — Provider Abstraction Interface
 - **Description:** Define the Go interface for model completion, listing, and streaming.
@@ -212,8 +216,9 @@ Establish the LLM provider interfaces and implement the OpenAI-Compatible HTTP/S
 Build the local Markdown YAML frontmatter parser for Skills and rule verification sandboxes.
 
 ### Modules Covered
-* `internal/skills`
-* `internal/rules`
+* `agent/skills`
+* `agent/rules`
+* `internal/impl/...` (skill/rule loading + sandbox)
 
 ### Task 5.1 — Local Skills Filesystem Loader & Parser
 - **Description:** Build the system that scans, reads, and parses local Skill definitions.
@@ -248,7 +253,7 @@ Build the local Markdown YAML frontmatter parser for Skills and rule verificatio
 Define the Tool interface and build the centralized Tool Registry that enforces permissions and workspace directory safety constraints.
 
 ### Modules Covered
-* `internal/tools`
+* `internal/impl/tool`
 
 ### Task 6.1 — Tool Registry & Contracts
 - **Description:** Define the programmatic interface for all tools and the registry manager.
@@ -292,8 +297,8 @@ Define the Tool interface and build the centralized Tool Registry that enforces 
 Implement the main orchestrator (Agent Loop), context snapshot builder, and token-based conversation pruning/compaction.
 
 ### Modules Covered
-* `internal/runtime`
-* `internal/runtime/compaction`
+* `internal/domain/service` (Agent Loop)
+* `internal/domain/service/compaction`
 
 ### Task 7.1 — Runtime Context Snapshot Builder
 - **Description:** Build the snapshot assembly service that collects all state at the start of an execution.
@@ -338,8 +343,8 @@ Implement the main orchestrator (Agent Loop), context snapshot builder, and toke
 Implement database session state, local file uploads, and Go-based Memory vector similarity search.
 
 ### Modules Covered
-* `internal/session`
-* `internal/memory`
+* `internal/impl/session`
+* `internal/impl/memory`
 
 ### Task 8.1 — Session Management & History Persistence
 - **Description:** Write conversation turn logs to PostgreSQL at the end of executions.
@@ -386,8 +391,8 @@ Implement database session state, local file uploads, and Go-based Memory vector
 Publish live execution events over WebSocket/SSE and log telemetry spans.
 
 ### Modules Covered
-* `internal/tracing`
-* `internal/events`
+* `internal/transport/socket` (realtime events)
+* `internal/impl/store/postgres` (tracing store)
 
 ### Task 9.1 — Realtime Event Publisher
 - **Description:** Stream agent runtime events to clients.
@@ -422,8 +427,8 @@ Publish live execution events over WebSocket/SSE and log telemetry spans.
 Implement multi-scope API keys and global system configuration endpoints.
 
 ### Modules Covered
-* `internal/auth`
-* `internal/config`
+* `internal/impl/store/postgres` (api_key, global_config)
+* `internal/impl/config`
 
 ### Task 10.1 — API Keys Authentication
 - **Description:** Implement CRUD and verification for client integration API keys.
@@ -457,6 +462,7 @@ Build the Cobra command tree and BubbleTea interactive chat console for command-
 
 ### Modules Covered
 * `cmd/agentkit`
+* `internal/tui`
 
 ### Task 11.1 — Cobra Command Tree & Server Boot
 - **Description:** Implement the main CLI entry points.

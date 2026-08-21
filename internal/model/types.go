@@ -10,13 +10,18 @@ const (
 	SessionActive SessionStatus = "active" 
 	SessionClose SessionStatus = "close"
 )
-
+type AgentType string 
+const (
+	AgentPredefined AgentType = "predefined" 
+	AgentOpen AgentType = "open"
+)
 // import "context"
 type Agent struct {
 	ID string `json:"id"`
 	Name string `json:"name"` //agent name 
 	Kind string `json:"kind"` //Agent soul: coder, artist, teacher... 
 	SystemPrompt string `json:"system_prompt"`
+	Type AgentType `json:"type,omitempty"`
 	MaxToken int `json:"max_token"`
 	//Mot so chi so config khac, se tien hanh nghien cuu lai database va import sau 
 	ProviderModel ProviderModel `json:"provider_model"`
@@ -112,7 +117,7 @@ type Session struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"` 
 }
-
+//Usage per request 
 type Usage struct {
 	PromptTokens                      int  `json:"prompt_tokens"`
 	CompletionTokens                  int  `json:"completion_tokens"`

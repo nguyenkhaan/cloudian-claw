@@ -1,0 +1,365 @@
+================================================================
+CLOUDCLAW — DATA MODEL (single-owner, local-first)
+================================================================
+
+This is the authoritative Cloudclaw schema sketch. It deliberately differs
+from the upstream GoClaw draft in two ways:
+
+  1. SINGLE-OWNER: There is no multi-tenant `user` / `agent_share` /
+     `user_context_file` scoping. Cloudclaw is one local instance, one owner.
+  2. NO pgvector: Embeddings are stored as `double precision[]` (PostgreSQL
+     array of floats) or `jsonb`. Cosine Similarity is computed in Go, not in
+     the database. (The GoClaw draft used `vector` / `tvector` types — those
+     require the pgvector extension and are intentionally NOT used here.)
+
+Implementations live in `internal/impl/store/postgres`.
+
+----------------------------------------------------------------
+ENTITIES
+----------------------------------------------------------------
+
+table agent {
+  id string PK
+  name string
+  created_by string                 // owner id (single local owner)
+  model string                     // denormalized default model id
+  provider string                  // denormalized default provider id
+
+  workspace string                 // sandbox root for file/CLI tools
+  restrict_to_workspace bool       // enforce path containment
+
+  context_window int               // default: 200000
+  max_tool_iterations int          // default: 20 (bounded execution)
+
+  type string                      // predefined | open
+  is_default bool
+  status string                    // active | archived
+
+  soul_markdown text               // SOUL.md content
+  identity_markdown text           // IDENTITY.md content
+
+  memory_configs jsonb            // embedding provider/model, chunk, overlap
+  compaction_configs jsonb        // threshold, keep_recent, max_token_budget
+  context_pruning jsonb           // token budgeting policy
+  tool_configs jsonb              // global/agent tool toggles
+  skill_configs jsonb             // enabled skill ids
+  rule_configs jsonb              // assigned rule ids
+  other_configs jsonb
+
+  created_at datetime
+  updated_at datetime
+}
+
+table provider {
+  id string PK
+  display_name string
+  base_url string
+  provider_type string             // default: openai_compat
+  settings jsonb
+  enabled bool
+}
+
+table provider_model {
+  id string PK
+  provider_id string
+  model_id string                  // provider-native model id
+  display_name string
+  description string
+}
+
+table provider_api_key {
+  id string PK
+  provider_id string
+  key_hash string                  // store hash, never plaintext
+  label string
+  is_active bool
+  created_at datetime
+}
+
+----------------------------------------------------------------
+SKILLS & RULES (local Markdown packages + assignments)
+----------------------------------------------------------------
+
+table skill {
+  id string PK
+  name string
+  path string                      // filesystem path under agent/skills/
+  file_hash string                 // detect changes
+  version int
+  description string
+  summary string
+  content text                     // Markdown body injected into system prompt
+  frontmatter jsonb               // parsed YAML metadata (name, version, deps)
+  enabled bool
+  created_at datetime
+}
+
+table skill_version {
+  id string PK
+  skill_id string
+  version int
+  content text
+  frontmatter jsonb
+  created_at datetime
+}
+
+table skill_assignment {
+  id string PK
+  agent_id string
+  skill_id string
+  enabled bool
+  granted_at datetime
+  // hard delete on unassign
+}
+
+table rule {
+  id string PK
+  name string
+  version int
+  summary string
+  content text                     // Markdown rule body
+  enabled bool
+  created_at datetime
+}
+
+table rule_version {
+  id string PK
+  rule_id string
+  version int
+  content text
+  created_at datetime
+}
+
+table rule_assignment {
+  id string PK
+  agent_id string
+  rule_id string
+  enabled bool
+  granted_at datetime
+  // hard delete on unassign
+}
+
+----------------------------------------------------------------
+TOOLS & TOOL EXECUTION LOG
+----------------------------------------------------------------
+
+table tool {
+  id string PK
+  name string
+  description string
+  input_schema jsonb              // JSON Schema for argument validation
+  version int
+  timeout_ms int                  // default: 600000 (10 min)
+  enabled bool                     // global toggle
+  created_at datetime
+}
+
+table agent_tool_grant {
+  id string PK
+  agent_id string
+  tool_id string
+  granted_at datetime
+  // hard delete
+}
+
+table tool_call {
+  id string PK
+  agent_id string
+  tool_id string
+  session_id string
+  called_at datetime
+  arguments jsonb
+  result jsonb
+  error_string string
+  duration_ms int
+}
+
+----------------------------------------------------------------
+SESSIONS & MESSAGES
+----------------------------------------------------------------
+
+table session {
+  id string PK
+  agent_id string
+  title string
+  model string                     // denormalized
+  provider string                  // denormalized
+
+  status string                    // active | archived | closed
+  compaction_count int
+  memory_flush_at datetime
+  memory_flush_count int
+
+  input_tokens int
+  output_tokens int
+
+  created_at datetime
+  updated_at datetime
+}
+
+table message {
+  id string PK
+  session_id string
+  agent_id string
+  role string                      // system | user | assistant | tool
+  content text
+  thinking text                    // reasoning content for thinking models
+  tool_call_id string              // links assistant tool_call -> result
+  tool_name string
+  arguments jsonb
+  attachments jsonb               // relative paths served via static endpoint
+  status string                    // sending | completed | failed
+  created_at datetime
+}
+
+----------------------------------------------------------------
+MEMORY (Go Cosine similarity; embeddings as double precision[])
+----------------------------------------------------------------
+
+table memory_document {
+  id string PK
+  agent_id string
+  workspace string
+  path string
+  filename string
+  content text
+  created_at datetime
+}
+
+table memory_chunk {
+  id string PK
+  document_id string
+  agent_id string
+  start_line int
+  end_line int
+  content text
+  embedding double precision[]    // float8 array; Cosine computed in Go
+  created_at datetime
+}
+
+table memory_record {
+  id string PK
+  agent_id string
+  content text
+  embedding double precision[]    // for atomic memory entries
+  kind string                     // memory_search_tool | memory_search_skill
+  created_at datetime
+}
+
+----------------------------------------------------------------
+EXECUTION, EVENTS & TRACING
+----------------------------------------------------------------
+
+table execution {
+  id string PK
+  agent_id string
+  session_id string
+  status string                    // COMPLETED | FAILED | CANCELLED | LIMIT_REACHED
+  started_at datetime
+  ended_at datetime
+  error_message string
+}
+
+table execution_event {
+  id string PK
+  execution_id string
+  session_id string
+  agent_id string
+  type string                      // execution.started | tool.* | response.delta | ...
+  payload jsonb
+  created_at datetime
+}
+
+table trace {
+  id string PK
+  session_id string
+  execution_id string
+  status string                    // running | completed | failed
+  total_input_tokens bigint
+  total_output_tokens bigint
+  span_count int
+  llm_call_count int
+  tool_call_count int
+  duration_ms int
+  error_message string
+  started_at datetime
+  completed_at datetime
+  created_at datetime
+}
+
+table trace_span {
+  id string PK
+  trace_id string
+  parent_span_id string
+  name string
+  status string                    // running | completed | failed
+  input_tokens bigint
+  output_tokens bigint
+  tool_call_id string
+  error_message string
+  started_at datetime
+  completed_at datetime
+}
+
+----------------------------------------------------------------
+API KEYS (external integrations) & GLOBAL CONFIG
+----------------------------------------------------------------
+
+table api_key {
+  id string PK
+  label string
+  key_hash string                  // salted hash; plaintext shown once
+  scopes jsonb                     // e.g. ["chat","read:agents"]
+  expires_at datetime             // nullable = no expiry
+  revoked bool
+  created_at datetime
+}
+
+table api_key_usage {
+  id string PK
+  api_key_id string
+  called_at datetime
+  endpoint string
+  status int
+}
+
+table global_config {
+  id string PK
+  key string                      // server.host | ai.default_model | quota.* | tools.*
+  value jsonb
+  updated_at datetime
+}
+
+----------------------------------------------------------------
+RELATIONSHIPS (logical)
+----------------------------------------------------------------
+
+Ref: "session"."agent_id"       > "agent"."id"
+Ref: "message"."session_id"     > "session"."id"
+Ref: "tool_call"."session_id"   > "session"."id"
+Ref: "tool_call"."tool_id"      > "tool"."id"
+Ref: "agent_tool_grant"."agent_id"  > "agent"."id"
+Ref: "agent_tool_grant"."tool_id"   > "tool"."id"
+Ref: "skill_assignment"."agent_id"  > "agent"."id"
+Ref: "skill_assignment"."skill_id"  > "skill"."id"
+Ref: "rule_assignment"."agent_id"   > "agent"."id"
+Ref: "rule_assignment"."rule_id"    > "rule"."id"
+Ref: "provider_model"."provider_id" > "provider"."id"
+Ref: "provider_api_key"."provider_id" > "provider"."id"
+Ref: "memory_chunk"."document_id"   > "memory_document"."id"
+Ref: "execution_event"."execution_id" > "execution"."id"
+Ref: "trace"."execution_id"      > "execution"."id"
+Ref: "trace_span"."trace_id"     > "trace"."id"
+Ref: "api_key_usage"."api_key_id" > "api_key"."id"
+
+----------------------------------------------------------------
+NOTES
+----------------------------------------------------------------
+- All embedding columns use `double precision[]`, NOT `vector`. The Go layer
+  (internal/impl/memory) loads vectors into memory and ranks by Cosine
+  Similarity. No pgvector extension is required.
+- There is no `user` / `agent_share` / `user_context_file` table: Cloudclaw is
+  single-owner. Ownership columns (created_by) are kept for audit only.
+- Store implementations: internal/impl/store (interfaces) and
+  internal/impl/store/postgres (PostgreSQL). Runtime components depend only on
+  the interfaces, never on SQL directly.
