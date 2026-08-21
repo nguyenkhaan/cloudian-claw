@@ -1,23 +1,15 @@
-================================================================
-CLOUDCLAW — DATA MODEL (single-owner, local-first)
-================================================================
-
-This is the authoritative Cloudclaw schema sketch. It deliberately differs
-from the upstream GoClaw draft in two ways:
-
-  1. SINGLE-OWNER: There is no multi-tenant `user` / `agent_share` /
-     `user_context_file` scoping. Cloudclaw is one local instance, one owner.
-  2. NO pgvector: Embeddings are stored as `double precision[]` (PostgreSQL
-     array of floats) or `jsonb`. Cosine Similarity is computed in Go, not in
-     the database. (The GoClaw draft used `vector` / `tvector` types — those
-     require the pgvector extension and are intentionally NOT used here.)
-
-Implementations live in `internal/impl/store/postgres`.
-
-----------------------------------------------------------------
-ENTITIES
-----------------------------------------------------------------
-
+//================================================================
+//CLOUDCLAW — DATA MODEL (single-owner, local-first)
+//================================================================
+//
+//----------------------------------------------------------------
+//ENTITIES
+//----------------------------------------------------------------
+table user {
+  ID string PK 
+  name string 
+  provider_information string 
+}
 table agent {
   id string PK
   name string
@@ -35,9 +27,6 @@ table agent {
   is_default bool
   status string                    // active | archived
 
-  soul_markdown text               // SOUL.md content
-  identity_markdown text           // IDENTITY.md content
-
   memory_configs jsonb            // embedding provider/model, chunk, overlap
   compaction_configs jsonb        // threshold, keep_recent, max_token_budget
   context_pruning jsonb           // token budgeting policy
@@ -49,7 +38,31 @@ table agent {
   created_at datetime
   updated_at datetime
 }
-
+table user_context_file {
+  id string PK 
+  user_id string 
+  agent_id string 
+  filename string 
+  workspace string 
+  content TEXT 
+  path string 
+  created_at datetime 
+}
+table agent_context_file {
+  id string PK 
+  agent_id string 
+  filename string 
+  workspace string 
+  content TEXT 
+  path string 
+  created_at datetime 
+}
+table agent_share {
+  user_id string 
+  agent_id string 
+  role string 
+  granted_by string 
+}
 table provider {
   id string PK
   display_name string
@@ -76,9 +89,9 @@ table provider_api_key {
   created_at datetime
 }
 
-----------------------------------------------------------------
-SKILLS & RULES (local Markdown packages + assignments)
-----------------------------------------------------------------
+//----------------------------------------------------------------
+//SKILLS & RULES (local Markdown packages + assignments)
+//----------------------------------------------------------------
 
 table skill {
   id string PK
@@ -93,7 +106,7 @@ table skill {
   enabled bool
   created_at datetime
 }
-
+//Tam thời chưa cần sử dụng đến - Phục vụ scaling sau này
 table skill_version {
   id string PK
   skill_id string
@@ -121,7 +134,7 @@ table rule {
   enabled bool
   created_at datetime
 }
-
+//Tam thời chưa cần sử dụng đến - Phục vụ scaling sau này
 table rule_version {
   id string PK
   rule_id string
@@ -136,12 +149,13 @@ table rule_assignment {
   rule_id string
   enabled bool
   granted_at datetime
+  priority int //default: 1 
   // hard delete on unassign
 }
 
-----------------------------------------------------------------
-TOOLS & TOOL EXECUTION LOG
-----------------------------------------------------------------
+//----------------------------------------------------------------
+//TOOLS & TOOL EXECUTION LOG
+//----------------------------------------------------------------
 
 table tool {
   id string PK
@@ -174,13 +188,14 @@ table tool_call {
   duration_ms int
 }
 
-----------------------------------------------------------------
-SESSIONS & MESSAGES
-----------------------------------------------------------------
+//----------------------------------------------------------------
+//SESSIONS & MESSAGES
+//----------------------------------------------------------------
 
 table session {
   id string PK
   agent_id string
+  user_id string 
   title string
   model string                     // denormalized
   provider string                  // denormalized
@@ -212,9 +227,9 @@ table message {
   created_at datetime
 }
 
-----------------------------------------------------------------
-MEMORY (Go Cosine similarity; embeddings as double precision[])
-----------------------------------------------------------------
+//----------------------------------------------------------------
+//MEMORY (Go Cosine similarity; embeddings as double precision[])
+//----------------------------------------------------------------
 
 table memory_document {
   id string PK
@@ -233,7 +248,7 @@ table memory_chunk {
   start_line int
   end_line int
   content text
-  embedding double precision[]    // float8 array; Cosine computed in Go
+  embedding double     // float8 array; Cosine computed in Go
   created_at datetime
 }
 
@@ -241,14 +256,14 @@ table memory_record {
   id string PK
   agent_id string
   content text
-  embedding double precision[]    // for atomic memory entries
+  embedding double    // for atomic memory entries
   kind string                     // memory_search_tool | memory_search_skill
   created_at datetime
 }
 
-----------------------------------------------------------------
-EXECUTION, EVENTS & TRACING
-----------------------------------------------------------------
+//----------------------------------------------------------------
+//EXECUTION, EVENTS & TRACING
+//----------------------------------------------------------------
 
 table execution {
   id string PK
@@ -301,9 +316,9 @@ table trace_span {
   completed_at datetime
 }
 
-----------------------------------------------------------------
-API KEYS (external integrations) & GLOBAL CONFIG
-----------------------------------------------------------------
+//----------------------------------------------------------------
+//API KEYS (external integrations) & GLOBAL CONFIG
+//----------------------------------------------------------------
 
 table api_key {
   id string PK
@@ -323,16 +338,10 @@ table api_key_usage {
   status int
 }
 
-table global_config {
-  id string PK
-  key string                      // server.host | ai.default_model | quota.* | tools.*
-  value jsonb
-  updated_at datetime
-}
 
-----------------------------------------------------------------
-RELATIONSHIPS (logical)
-----------------------------------------------------------------
+//----------------------------------------------------------------
+//RELATIONSHIPS (logical)
+//----------------------------------------------------------------
 
 Ref: "session"."agent_id"       > "agent"."id"
 Ref: "message"."session_id"     > "session"."id"
@@ -352,14 +361,14 @@ Ref: "trace"."execution_id"      > "execution"."id"
 Ref: "trace_span"."trace_id"     > "trace"."id"
 Ref: "api_key_usage"."api_key_id" > "api_key"."id"
 
-----------------------------------------------------------------
-NOTES
-----------------------------------------------------------------
-- All embedding columns use `double precision[]`, NOT `vector`. The Go layer
-  (internal/impl/memory) loads vectors into memory and ranks by Cosine
-  Similarity. No pgvector extension is required.
-- There is no `user` / `agent_share` / `user_context_file` table: Cloudclaw is
-  single-owner. Ownership columns (created_by) are kept for audit only.
-- Store implementations: internal/impl/store (interfaces) and
-  internal/impl/store/postgres (PostgreSQL). Runtime components depend only on
-  the interfaces, never on SQL directly.
+//----------------------------------------------------------------
+//NOTES
+//----------------------------------------------------------------
+//- All embedding columns use `double precision[]`, NOT `vector`. The Go layer
+//  (internal/impl/memory) loads vectors into memory and ranks by Cosine
+//  Similarity. No pgvector extension is required.
+//- There is no `user` / `agent_share` / `user_context_file` table: Cloudclaw is
+//  single-owner. Ownership columns (created_by) are kept for audit only.
+//- Store implementations: internal/impl/store (interfaces) and
+//  internal/impl/store/postgres (PostgreSQL). Runtime components depend only on
+//  the interfaces, never on SQL directly.

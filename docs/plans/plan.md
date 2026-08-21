@@ -3,7 +3,7 @@
 ## 1. Implementation Overview
 - **Overall Implementation Strategy:** This project implements **Cloudclaw** (AI Agent Gateway local-first, single-owner). The implementation follows a bottom-up approach starting from the core domain types, application bootstrapping, and storage persistence layers. Once the foundation is laid, we implement the transport gateway, provider interfaces, tool registry, and agent loop execution orchestrator. Finally, memory similarity search, event tracing, the CLI, and the React Dashboard UI are integrated.
 - **Major Modules (DDD layout — see `README.md` > Folder structure):**
-  - Core Domain & Model Types (`internal/model`, `internal/domain/{entity,event,interface,service}`)
+  - Core Domain & Model Types (`internal/domain/entity`, `internal/domain/{entity,event,interface,service}`)
   - Config & Application Container (`internal/impl/config`)
   - PostgreSQL Persistence Store (`internal/impl/store`, `internal/impl/store/postgres`, `internal/impl/database`)
   - Gateway & Authentication Transport (`internal/transport/http`, `internal/transport/socket`)
@@ -53,7 +53,7 @@ Below is the mapping of components defined in [architecture.md](file:///home/clo
 Establish the compile-time contracts, base domain models, and core configuration loading so that the project can build cleanly without external drivers.
 
 ### Modules Covered
-* `internal/model`
+* `internal/domain/entity`
 * `internal/domain/{entity,event,interface,service}`
 * `internal/impl/config`
 
@@ -61,13 +61,13 @@ Establish the compile-time contracts, base domain models, and core configuration
 - **Description:** Define Go structures representing the core components of the system.
 - **Objective:** Create compilation-stable domain models.
 - **Requirements:**
-  - Define `Agent`, `Provider`, `Model`, `Skill`, `Rule`, `Tool`, `Session`, `Message`, `Memory`, `Execution`, `APIKey`, and `Config` structs in `internal/model`.
+  - Define `Agent`, `Provider`, `Model`, `Skill`, `Rule`, `Tool`, `Session`, `Message`, `Memory`, `Execution`, `APIKey`, and `Config` structs in `internal/domain/entity`.
   - Define `Usage` for calculate token per user'request 
   - Include basic validation functions for each entity.
-  - Do not import any SQL driver or third-party HTTP transport libraries in `internal/model`.
+  - Do not import any SQL driver or third-party HTTP transport libraries in `internal/domain/entity`.
 - **Implementation Guidance:** Use Go standard types. Map to the database schemas defined later. Refer to GoClaw's representation of domain entities in [06-store-data-model.md](file:///home/cloud/workspace/project/cloudclaw/docs/references/06-store-data-model.md).
 - **Dependencies:** None.
-- **Validation:** Run `go test ./internal/model/...` to verify they compile and validate.
+- **Validation:** Run `go test ./internal/domain/entity/...` to verify they compile and validate.
 
 ### Task 1.2 — Runtime Contracts & State Machine Definitions
 - **Description:** Define the structures that carry request and status state through the Agent Runtime.
@@ -230,7 +230,7 @@ Build the local Markdown YAML frontmatter parser for Skills and rule verificatio
   - Reject skills with syntax errors or invalid frontmatter without crashing.
 - **Implementation Guidance:** Refer to GoClaw's core skill resolution in [15-core-skills-system.md](file:///home/cloud/workspace/project/cloudclaw/docs/references/15-core-skills-system.md).
 - **Dependencies:** Phase 2.
-- **Validation:** Put custom mock markdown files with frontmatter inside a test directory, scan, and verify metadata maps correctly to `internal/model/Skill`.
+- **Validation:** Put custom mock markdown files with frontmatter inside a test directory, scan, and verify metadata maps correctly to `internal/domain/entity/Skill`.
 
 ### Task 5.2 — Rules CRUD & Sandbox Executor
 - **Description:** Implement CRUD actions for system Rules and a temporary sandbox to test Rules.
