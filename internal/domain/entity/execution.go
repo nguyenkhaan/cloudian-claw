@@ -2,6 +2,8 @@ package entity
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 )
 
@@ -77,4 +79,77 @@ type TraceSpan struct {
 	ErrorMessage string      `json:"error_message,omitempty"`
 	StartedAt    time.Time   `json:"started_at,omitempty"`
 	CompletedAt  time.Time   `json:"completed_at,omitempty"`
+}
+
+func (e Execution) Validate() error {
+	if e.ID == "" {
+		return errors.New("validate execution: id is required")
+	}
+	if e.AgentID == "" {
+		return errors.New("validate execution: agent_id is required")
+	}
+	if e.SessionID == "" {
+		return errors.New("validate execution: session_id is required")
+	}
+	switch e.Status {
+	case ExecutionStatusCompleted, ExecutionStatusFailed, ExecutionStatusCancelled, ExecutionStatusLimitReached:
+	default:
+		return fmt.Errorf("validate execution: invalid status %q", e.Status)
+	}
+	if !e.EndedAt.IsZero() && e.EndedAt.Before(e.StartedAt) {
+		return errors.New("validate execution: ended_at must not be before started_at")
+	}
+	return nil
+}
+
+func (ev ExecutionEvent) Validate() error {
+	if ev.ID == "" {
+		return errors.New("validate execution_event: id is required")
+	}
+	if ev.ExecutionID == "" {
+		return errors.New("validate execution_event: execution_id is required")
+	}
+	return nil
+}
+
+func (t Trace) Validate() error {
+	if t.ID == "" {
+		return errors.New("validate trace: id is required")
+	}
+	switch t.Status {
+	case TraceStatusRunning, TraceStatusCompleted, TraceStatusFailed:
+	default:
+		return fmt.Errorf("validate trace: invalid status %q", t.Status)
+	}
+	if t.TotalInputTokens < 0 {
+		return errors.New("validate trace: total_input_tokens must not be negative")
+	}
+	if t.TotalOutputTokens < 0 {
+		return errors.New("validate trace: total_output_tokens must not be negative")
+	}
+	if t.DurationMs < 0 {
+		return errors.New("validate trace: duration_ms must not be negative")
+	}
+	return nil
+}
+
+func (s TraceSpan) Validate() error {
+	if s.ID == "" {
+		return errors.New("validate trace_span: id is required")
+	}
+	if s.TraceID == "" {
+		return errors.New("validate trace_span: trace_id is required")
+	}
+	switch s.Status {
+	case TraceStatusRunning, TraceStatusCompleted, TraceStatusFailed:
+	default:
+		return fmt.Errorf("validate trace_span: invalid status %q", s.Status)
+	}
+	if s.InputTokens < 0 {
+		return errors.New("validate trace_span: input_tokens must not be negative")
+	}
+	if s.OutputTokens < 0 {
+		return errors.New("validate trace_span: output_tokens must not be negative")
+	}
+	return nil
 }

@@ -1,6 +1,10 @@
 package entity
 
-import "time"
+import (
+	"errors"
+	"fmt"
+	"time"
+)
 
 type AgentType string
 
@@ -58,4 +62,63 @@ type AgentShare struct {
 	AgentID   string    `json:"agent_id,omitempty"`
 	Role      AgentRole `json:"role,omitempty"` // "owner", "user"
 	GrantedBy string    `json:"granted_by,omitempty"`
+}
+
+func (a *Agent) Validate() error {
+	if a.ID == "" {
+		return errors.New("validate agent: id is required")
+	}
+	if a.Name == "" {
+		return errors.New("validate agent: name is required")
+	}
+	if a.CreatedBy == "" {
+		return errors.New("validate agent: created_by is required")
+	}
+	if a.ContextWindow <= 0 {
+		return errors.New("validate agent: context window must be greater than 0")
+	}
+	if a.MaxToolIterations <= 0 {
+		return errors.New("validate agent: max_tool_iterations must be greater than 0")
+	}
+	switch a.Type {
+	case "", OpenAgentType, PredefinedAgentType:
+	default:
+		return fmt.Errorf("validate agent: invalid type %q", a.Type)
+	}
+	if a.Status != "" {
+		switch a.Status {
+		case AgentStatusActive, AgentStatusArchived:
+		default:
+			return fmt.Errorf("validate agent: invalid status %q", a.Status)
+		}
+	}
+	if a.RestrictToWorkspace && a.Workspace == "" {
+		return errors.New("validate agent: workspace is required when restrict_to_workspace is true")
+	}
+	return nil
+}
+
+func (f AgentContextFile) Validate() error {
+	if f.ID == "" {
+		return errors.New("validate agent_context_file: id is required")
+	}
+	if f.AgentID == "" {
+		return errors.New("validate agent_context_file: agent_id is required")
+	}
+	return nil
+}
+
+func (s AgentShare) Validate() error {
+	if s.UserID == "" {
+		return errors.New("validate agent_share: user_id is required")
+	}
+	if s.AgentID == "" {
+		return errors.New("validate agent_share: agent_id is required")
+	}
+	switch s.Role {
+	case AgentUser, AgentOwn:
+	default:
+		return fmt.Errorf("validate agent_share: invalid role %q", s.Role)
+	}
+	return nil
 }

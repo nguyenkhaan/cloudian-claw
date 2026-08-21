@@ -1,6 +1,9 @@
 package entity
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 type Tool struct {
 	ID          string    `json:"id"`
@@ -27,4 +30,49 @@ type ToolCall struct {
 	CalledAt   time.Time `json:"called_at,omitempty"`
 	ErrorStr   string    `json:"error_string,omitempty"`
 	DurationMs int       `json:"duration_ms,omitempty"`
+}
+
+func (t Tool) Validate() error {
+	if t.ID == "" {
+		return errors.New("validate tool: id is required")
+	}
+	if t.Name == "" {
+		return errors.New("validate tool: name is required")
+	}
+	if t.Version < 0 {
+		return errors.New("validate tool: version must not be negative")
+	}
+	if t.TimeoutMs <= 0 {
+		return errors.New("validate tool: timeout_ms must be greater than 0")
+	}
+	return nil
+}
+
+func (g AgentToolGrant) Validate() error {
+	if g.ID == "" {
+		return errors.New("validate agent_tool_grant: id is required")
+	}
+	if g.AgentID == "" {
+		return errors.New("validate agent_tool_grant: agent_id is required")
+	}
+	if g.ToolID == "" {
+		return errors.New("validate agent_tool_grant: tool_id is required")
+	}
+	return nil
+}
+
+func (c ToolCall) Validate() error {
+	if c.ID == "" {
+		return errors.New("validate tool_call: id is required")
+	}
+	if c.AgentID == "" {
+		return errors.New("validate tool_call: agent_id is required")
+	}
+	if c.ToolID == "" {
+		return errors.New("validate tool_call: tool_id is required")
+	}
+	if c.SessionID == "" {
+		return errors.New("validate tool_call: session_id is required")
+	}
+	return nil
 }
