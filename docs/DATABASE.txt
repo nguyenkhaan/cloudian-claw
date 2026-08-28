@@ -362,15 +362,3 @@ Ref: "execution_event"."execution_id" > "execution"."id"
 Ref: "trace"."execution_id"      > "execution"."id"
 Ref: "trace_span"."trace_id"     > "trace"."id"
 Ref: "api_key_usage"."api_key_id" > "api_key"."id"
-
-//----------------------------------------------------------------
-//NOTES
-//----------------------------------------------------------------
-//- All embedding columns use `double precision[]`, NOT `vector`. The Go layer
-//  (internal/impl/memory) loads vectors into memory and ranks by Cosine
-//  Similarity. No pgvector extension is required.
-//- There is no `user` / `agent_share` / `user_context_file` table: Cloudclaw is
-//  single-owner. Ownership columns (created_by) are kept for audit only.
-//- Store implementations: internal/impl/store (interfaces) and
-//  internal/impl/store/postgres (PostgreSQL). Runtime components depend only on
-//  the interfaces, never on SQL directly.
