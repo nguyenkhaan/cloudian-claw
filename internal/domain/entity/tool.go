@@ -1,4 +1,5 @@
 package entity
+//Ghi log, ket qua thuc thi: Runtime Toolcall -> Tool Registry -> Tool Result / Tool Error -> Persistent ToolCall 
 
 import (
 	"errors"
