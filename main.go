@@ -1,18 +1,22 @@
 package main
 
 import (
+	"cloudian/cloudian-claw/internal/impl/config"
 	"context"
 	"fmt"
-)
-func worker(ctx context.Context) {
-	username := ctx.Value("username") 
-	fmt.Println(username) 
-}
-func main() {
-	ctx := context.Background() 
-	fmt.Println(ctx.Done()) 
-	fmt.Print(ctx.Deadline())
-	
-	fmt.Println(ctx.Err())
 
+	"github.com/joho/godotenv"
+)
+func main() {
+	godotenv.Load()  
+	ctx := context.Background() 
+
+	container, err := config.NewContainer(ctx) 
+	if err != nil {
+		fmt.Println("Error while loading container: " , err) 
+		return 
+	} 
+	fmt.Print(container) 
+	applicationConfig := container.Config 
+	fmt.Println(applicationConfig.ServerHost)
 }

@@ -1,67 +1,150 @@
 package config
 
-import "os"
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
 
-func OPENROUTER_API_KEY() string {
-	return os.Getenv("OPENROUTER_API_KEY")
+// ApplicationConfig is the typed configuration required to start Cloudclaw.
+type ApplicationConfig struct {
+	GatewayAPIToken  string
+	OpenRouterAPIKey string
+
+	ServerHost  string
+	ServerPort  int
+	PostgresURL string
+
+	DefaultProvider string
+	DefaultModel    string
+	AITemperature   float64
+	AIMaxTokens     int
+
+	QuotaMaxRequestsPerDay int
+	GlobalToolsEnabled     bool
+	MaxToolCalls           int
+	MaxProviderRetries     int
+	MaxExecutionDuration   time.Duration
+	MaxContextTokens       int
+	MaxContinuationDepth   int
 }
 
-func GATEWAY_API_TOKEN() string {
-	return os.Getenv("GATEWAY_API_TOKEN")
+// LoadApplicationConfig reads typed values from the process environment.
+// Ham main se tien hanh load .env thay the 
+func LoadApplicationConfig() (*ApplicationConfig, error) {
+	serverPort, err := requiredInt("SERVER_PORT")
+	if err != nil {
+		return nil, err
+	}
+	temperature, err := requiredFloat64("AI_TEMPERATURE")
+	if err != nil {
+		return nil, err
+	}
+	maxTokens, err := requiredInt("AI_MAX_TOKENS")
+	if err != nil {
+		return nil, err
+	}
+	quota, err := requiredInt("QUOTA_MAX_REQUESTS_PER_DAY")
+	if err != nil {
+		return nil, err
+	}
+	toolsEnabled, err := requiredBool("GLOBAL_TOOLS_ENABLED")
+	if err != nil {
+		return nil, err
+	}
+	maxToolCalls, err := requiredInt("MAX_TOOL_CALLS")
+	if err != nil {
+		return nil, err
+	}
+	maxRetries, err := requiredInt("MAX_PROVIDER_RETRIES")
+	if err != nil {
+		return nil, err
+	}
+	maxDuration, err := requiredDuration("MAX_EXECUTION_DURATION")
+	if err != nil {
+		return nil, err
+	}
+	maxContextTokens, err := requiredInt("MAX_CONTEXT_TOKENS")
+	if err != nil {
+		return nil, err
+	}
+	maxDepth, err := requiredInt("MAX_CONTINUATION_DEPTH")
+	if err != nil {
+		return nil, err
+	}
+
+	config := &ApplicationConfig{
+		GatewayAPIToken:        requiredString("GATEWAY_API_TOKEN"),
+		OpenRouterAPIKey:       requiredString("OPENROUTER_API_KEY"),
+		ServerHost:             requiredString("SERVER_HOST"),
+		ServerPort:             serverPort,
+		PostgresURL:            requiredString("POSTGRES_URL"),
+		DefaultProvider:        requiredString("DEFAULT_PROVIDER"),
+		DefaultModel:           requiredString("DEFAULT_MODEL"),
+		AITemperature:          temperature,
+		AIMaxTokens:            maxTokens,
+		QuotaMaxRequestsPerDay: quota,
+		GlobalToolsEnabled:     toolsEnabled,
+		MaxToolCalls:           maxToolCalls,
+		MaxProviderRetries:     maxRetries,
+		MaxExecutionDuration:   maxDuration,
+		MaxContextTokens:       maxContextTokens,
+		MaxContinuationDepth:   maxDepth,
+	}
+
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+	return config, nil
 }
 
-func SERVER_HOST() string {
-	return os.Getenv("SERVER_HOST")
+func (c ApplicationConfig) Validate() error {
+	if c.GatewayAPIToken == "" || c.ServerHost == "" || c.PostgresURL == "" || c.DefaultProvider == "" || c.DefaultModel == "" {
+		return fmt.Errorf("validate application config: a required string value is empty")
+	}
+	if c.ServerPort <= 0 || c.AIMaxTokens <= 0 || c.MaxToolCalls <= 0 || c.MaxExecutionDuration <= 0 || c.MaxContextTokens <= 0 || c.MaxContinuationDepth <= 0 {
+		return fmt.Errorf("validate application config: a positive value is required")
+	}
+	if c.MaxProviderRetries < 0 || c.QuotaMaxRequestsPerDay < 0 {
+		return fmt.Errorf("validate application config: retry and quota values cannot be negative")
+	}
+	return nil
 }
 
-func SERVER_PORT() string {
-	return os.Getenv("SERVER_PORT")
+func requiredString(name string) string {
+	return strings.TrimSpace(os.Getenv(name))
 }
 
-func POSTGRES_URL() string {
-	return os.Getenv("POSTGRES_URL")
+func requiredInt(name string) (int, error) {
+	parsed, err := strconv.Atoi(requiredString(name))
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", name, err)
+	}
+	return parsed, nil
 }
 
-func DEFAULT_PROVIDER() string {
-	return os.Getenv("DEFAULT_PROVIDER")
+func requiredFloat64(name string) (float64, error) {
+	parsed, err := strconv.ParseFloat(requiredString(name), 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", name, err)
+	}
+	return parsed, nil
 }
 
-func DEFAULT_MODEL() string {
-	return os.Getenv("DEFAULT_MODEL")
+func requiredBool(name string) (bool, error) {
+	parsed, err := strconv.ParseBool(requiredString(name))
+	if err != nil {
+		return false, fmt.Errorf("parse %s: %w", name, err)
+	}
+	return parsed, nil
 }
 
-func AI_TEMPERATURE() string {
-	return os.Getenv("AI_TEMPERATURE")
-}
-
-func AI_MAX_TOKENS() string {
-	return os.Getenv("AI_MAX_TOKENS")
-}
-
-func QUOTA_MAX_REQUESTS_PER_DAY() string {
-	return os.Getenv("QUOTA_MAX_REQUESTS_PER_DAY")
-}
-
-func GLOBAL_TOOLS_ENABLED() string {
-	return os.Getenv("GLOBAL_TOOLS_ENABLED")
-}
-
-func MAX_TOOL_CALLS() string {
-	return os.Getenv("MAX_TOOL_CALLS")
-}
-
-func MAX_PROVIDER_RETRIES() string {
-	return os.Getenv("MAX_PROVIDER_RETRIES")
-}
-
-func MAX_EXECUTION_DURATION() string {
-	return os.Getenv("MAX_EXECUTION_DURATION")
-}
-
-func MAX_CONTEXT_TOKENS() string {
-	return os.Getenv("MAX_CONTEXT_TOKENS")
-}
-
-func MAX_CONTINUATION_DEPTH() string {
-	return os.Getenv("MAX_CONTINUATION_DEPTH")
+func requiredDuration(name string) (time.Duration, error) {
+	parsed, err := time.ParseDuration(requiredString(name))
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", name, err)
+	}
+	return parsed, nil
 }
